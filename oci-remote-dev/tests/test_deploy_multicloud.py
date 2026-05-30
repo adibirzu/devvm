@@ -59,6 +59,10 @@ class TestMultiCloudDeployer(unittest.TestCase):
             "DEV_2_SSH_KEY_PATH=" + str(self.ssh_dir / "id_rsa.pub") + "\n"
             "DEV_2_WG_IP=10.200.200.3\n"
             "DEV_2_CODE_SERVER_PORT=8444\n"
+            "DEV_4_NAME=charlie\n"
+            "DEV_4_SSH_KEY_PATH=" + str(self.ssh_dir / "id_rsa.pub") + "\n"
+            "DEV_4_WG_IP=10.200.200.5\n"
+            "DEV_4_CODE_SERVER_PORT=8446\n"
         )
         self.env_file = self.temp_dir / ".env.local"
         self.env_file.write_text(self.env_content, encoding="utf-8")
@@ -82,7 +86,7 @@ class TestMultiCloudDeployer(unittest.TestCase):
         
         # Assertions
         self.assertEqual(deployer.provider, "OCI")
-        self.assertEqual(len(deployer.developers), 2)
+        self.assertEqual(len(deployer.developers), 3)
         
         self.assertEqual(deployer.developers[0]["name"], "testowner")
         self.assertEqual(deployer.developers[0]["code_server_port"], 8443)
@@ -92,10 +96,19 @@ class TestMultiCloudDeployer(unittest.TestCase):
         self.assertEqual(deployer.developers[1]["code_server_port"], 8444)
         self.assertEqual(deployer.developers[1]["wg_ip"], "10.200.200.3")
 
+        self.assertEqual(deployer.developers[2]["name"], "charlie")
+        self.assertEqual(deployer.developers[2]["code_server_port"], 8446)
+        self.assertEqual(deployer.developers[2]["wg_ip"], "10.200.200.5")
+
     @patch("scripts.deploy_multicloud.run_cmd")
     def test_wireguard_key_generation(self, mock_run_cmd: MagicMock) -> None:
         """Verify that server and clients keys are generated securely."""
-        mock_run_cmd.side_effect = ["server_priv", "server_pub", "dev1_priv", "dev1_pub", "dev2_priv", "dev2_pub"]
+        mock_run_cmd.side_effect = [
+            "server_priv", "server_pub",
+            "dev1_priv", "dev1_pub",
+            "dev2_priv", "dev2_pub",
+            "dev4_priv", "dev4_pub",
+        ]
         
         args = MagicMock()
         args.env_file = str(self.env_file)
@@ -110,6 +123,7 @@ class TestMultiCloudDeployer(unittest.TestCase):
         self.assertEqual(deployer.wg_server_public_key, "server_pub")
         self.assertEqual(deployer.developers[0]["private_key"], "dev1_priv")
         self.assertEqual(deployer.developers[1]["private_key"], "dev2_priv")
+        self.assertEqual(deployer.developers[2]["private_key"], "dev4_priv")
 
     @patch("scripts.deploy_multicloud.run_cmd")
     def test_cloud_init_rendering(self, mock_run_cmd: MagicMock) -> None:
@@ -133,7 +147,8 @@ class TestMultiCloudDeployer(unittest.TestCase):
         self.assertIn("admin: testowner", rendered_init)
         self.assertIn("- name: testowner", rendered_init)
         self.assertIn("- name: alice", rendered_init)
-        self.assertIn('devs: "testowner" "alice"', rendered_init)
+        self.assertIn("- name: charlie", rendered_init)
+        self.assertIn('devs: "testowner" "alice" "charlie"', rendered_init)
 
 
 class TestWireGuardClientConfig(unittest.TestCase):
