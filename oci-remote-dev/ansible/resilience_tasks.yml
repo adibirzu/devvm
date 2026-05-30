@@ -72,3 +72,68 @@
     from_ip: "{{ wg_network | default('10.200.200.0/24') }}"
     port: "60000:61000"
     proto: udp
+
+# ── Live multi-agent status board ────────────────────────────────────────────
+- name: Resilience | Install agent-status aggregator
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/agent_status.py"
+    dest: /usr/local/bin/agent-status
+    owner: root
+    group: developers
+    mode: '0755'
+
+- name: Resilience | Ensure dashboard directory exists
+  ansible.builtin.file:
+    path: /opt/dashboard
+    state: directory
+    mode: '0755'
+
+- name: Resilience | Install the agent board page
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../dashboard/agents.html"
+    dest: /opt/dashboard/agents.html
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Resilience | agent-status snapshot service (writes agents.json)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/agent-status.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Aggregate live agent sessions into /opt/dashboard/agents.json
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/agent-status --home-root /home \
+        --gateway http://{{ wg_server_ip | default('10.200.200.1') }}:{{ multillm_gateway_port | default(8080) }} \
+        --out /opt/dashboard/agents.json
+
+- name: Resilience | agent-status timer (every 15s)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/agent-status.timer
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Refresh the agent board every 15 seconds
+
+      [Timer]
+      OnBootSec=30s
+      OnUnitActiveSec=15s
+      AccuracySec=2s
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Resilience | Reload systemd + enable the agent-status timer
+  ansible.builtin.systemd:
+    name: agent-status.timer
+    enabled: true
+    state: started
+    daemon_reload: true

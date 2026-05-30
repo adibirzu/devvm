@@ -14,7 +14,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Load config
-[[ -f "$PROJECT_DIR/.env.local" ]] && { set -a; source "$PROJECT_DIR/.env.local"; set +a; }
+if [[ -f "$PROJECT_DIR/.env" ]]; then
+    set -a; source "$PROJECT_DIR/.env"; set +a
+elif [[ -f "$PROJECT_DIR/.env.local" ]]; then
+    set -a; source "$PROJECT_DIR/.env.local"; set +a
+fi
 
 # Get deployment info
 DEPLOY_INFO="$PROJECT_DIR/configs/deployment-info.txt"
@@ -62,13 +66,16 @@ usage() {
     echo ""
 }
 
-# Resolve custom code-server ports for Developer 2 and 3
+# Resolve custom code-server ports for any configured developer.
 PORT="${CODE_SERVER_PORT:-8443}"
-if [[ "$DEVELOPER" == "${DEV_2_NAME:-}" ]]; then
-    PORT="${DEV_2_CODE_SERVER_PORT:-8444}"
-elif [[ "$DEVELOPER" == "${DEV_3_NAME:-}" ]]; then
-    PORT="${DEV_3_CODE_SERVER_PORT:-8445}"
-fi
+while IFS= read -r var; do
+    idx="${var#DEV_}"
+    idx="${idx%_NAME}"
+    if [[ "$DEVELOPER" == "${!var}" ]]; then
+        port_var="DEV_${idx}_CODE_SERVER_PORT"
+        PORT="${!port_var:-$PORT}"
+    fi
+done < <(compgen -A variable | grep -E '^DEV_[0-9]+_NAME$' || true)
 
 # Get SSH key path
 get_ssh_key() {
@@ -126,7 +133,7 @@ case "${COMMAND:-help}" in
 
     tunnel)
         echo -e "${CYAN}Creating SSH tunnel for RDP as developer '${DEVELOPER}'...${NC}"
-        echo "Connect your RDP client to localhost:3389"
+        echo "Connect your RDP client to localhost:${RDP_PORT:-3389}"
         echo "Press Ctrl+C to stop the tunnel"
         ssh "${SSH_OPTS[@]}" -o ExitOnForwardFailure=yes -L 3389:localhost:$RDP_PORT -N "$DEVELOPER@$PUBLIC_IP"
         ;;
