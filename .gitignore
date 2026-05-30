@@ -1,0 +1,8 @@
+# macOS / editor / tooling cruft
+.DS_Store
+*.log
+firebase-debug.log
+.antigravitycli/
+
+# Local-only secrets and generated artifacts live under the project subdir and are
+# ignored by oci-remote-dev/.gitignore (configs/, .env, keys, *.pem, etc.).
