@@ -366,15 +366,15 @@ main() {
 
     # ========== API Keys (Optional) ==========
     echo -e "\n${BLUE}=== API Keys (Optional - can be set later) ===${NC}"
-    echo -e "${YELLOW}Leave empty to configure later. Keys are stored in .env.local${NC}"
+    echo -e "${YELLOW}Leave empty to configure later. Keys are stored in .env${NC}"
 
     prompt ANTHROPIC_API_KEY "Anthropic API Key (Claude)" ""
     prompt OPENAI_API_KEY "OpenAI API Key (Codex)" ""
     prompt GOOGLE_AI_API_KEY "Google AI API Key (Gemini)" ""
     prompt GITHUB_TOKEN "GitHub Personal Access Token" ""
 
-    # ========== Generate .env.local ==========
-    echo -e "\n${CYAN}Generating .env.local configuration...${NC}"
+    # ========== Generate .env ==========
+    echo -e "\n${CYAN}Generating .env configuration...${NC}"
 
     cat > "$ENV_FILE" << EOF
 # Remote Development VM Configuration

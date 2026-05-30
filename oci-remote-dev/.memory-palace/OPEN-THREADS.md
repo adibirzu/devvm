@@ -20,12 +20,16 @@ this brings the experience to the VPN-reachable Linux VM.
 ## Next candidates
 - [ ] Phase 3 proper: central MCP tool-registry + guardrail policy (multillm-side
       enforcement of tenant scope + deny/confirm on destructive tool calls).
-- [ ] Decide git remote strategy — repo root is `~/dev` (multi-project); likely split
-      `devvm` into its own repo before any push so siblings aren't published.
+- [x] Split `devvm` into its own **private** repo (github.com/adibirzu/devvm).
+      `~/dev/devvm` now tracks it; parent `~/dev` no longer double-tracks. Pre-push
+      audit caught + fixed real tenancy namespaces hardcoded in `security_gate.py`.
 - [ ] tmux-resurrect/continuum for session persistence across VM reboots.
 
 ## Watch-outs
+- **This is now its own git repo** (`github.com/adibirzu/devvm`). Work in `~/dev/devvm`;
+  `git push` goes to the private repo. Don't re-add it to the parent `~/dev` repo.
 - WireGuard macOS **app** caches imported configs — always use `connect.sh wg-up`
   (wg-quick) or delete+re-import. See `DECISIONS.md`.
+- `gh` needs `GITHUB_TOKEN` unset (an invalid one was overriding stored creds).
 - No git remote yet; `git push` has no destination. Everything is local on `main`.
 

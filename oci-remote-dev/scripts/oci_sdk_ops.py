@@ -59,7 +59,7 @@ def _sdk_config(profile: str, config_file: Path, region: Optional[str]) -> Dict[
 def _resolve_tenancy_id(args: argparse.Namespace, env_data: Dict[str, str], cfg: Dict[str, str]) -> str:
     tenancy_id = args.tenancy_id or env_data.get("OCI_TENANCY_OCID") or cfg.get("tenancy")
     if not tenancy_id:
-        raise ValueError("Tenancy OCID is required (arg --tenancy-id, .env.local, or OCI config).")
+        raise ValueError("Tenancy OCID is required (arg --tenancy-id, .env, or OCI config).")
     return tenancy_id
 
 
@@ -213,10 +213,10 @@ def cmd_instance_ip(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="OCI Python SDK ops helper")
-    parser.add_argument("--profile", default=None, help="OCI profile name (default: OCI_PROFILE/.env.local/DEFAULT)")
+    parser.add_argument("--profile", default=None, help="OCI profile name (default: OCI_PROFILE/.env/DEFAULT)")
     parser.add_argument("--config-file", default="~/.oci/config", help="Path to OCI config file")
     parser.add_argument("--region", default=None, help="Override OCI region")
-    parser.add_argument("--env-file", default=".env.local", help="Path to env file")
+    parser.add_argument("--env-file", default=".env", help="Path to env file")
     parser.add_argument("--deployment-info", default="configs/deployment-info.txt", help="Path to deployment info file")
     parser.add_argument("--tenancy-id", default=None, help="Tenancy OCID override")
 
