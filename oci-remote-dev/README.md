@@ -165,8 +165,13 @@ The AI CLIs log token usage locally, per UNIX user (`~/.claude`, `~/.codex`, `~/
   ```bash
   usage-report                    # aggregate: by model + by project, last 24h
   usage-report --team --hours 168 # per-developer (tenant) rollup, last 7 days
+  usage-report --budgets          # flag developers over their daily cap (exit 2 on breach)
   usage-report --team --json      # raw JSON for scripting
   ```
+
+  A `multillm-budget-check.timer` runs `usage-report --budgets` daily when
+  `MULTILLM_USER_BUDGETS` is set; a breach fails the oneshot unit, surfacing in
+  `systemctl status multillm-budget-check` and journald.
 
 ### Toggles
 
