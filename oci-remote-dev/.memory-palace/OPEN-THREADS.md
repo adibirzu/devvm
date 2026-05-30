@@ -12,9 +12,10 @@ this brings the experience to the VPN-reachable Linux VM.
 - [x] Durable agent sessions (`agentctl`) — agents survive WG/SSH/internet drops.
 - [x] Connection resilience — mosh + `loginctl enable-linger` + tmux config (Ansible).
 - [x] Memory palace (this directory) + `palace` CLI.
-- [ ] Wire `agentctl status --json` into the `:80` landing dashboard for live
-      multi-agent visibility (the "AgentsRoom status board" view).
-- [ ] Project-status surface: per-project git state + active agents + recent LLM cost.
+- [x] Live multi-agent status board — `agent-status` aggregator + `/agents.html`
+      board page + 15s timer (`agentctl ls --json` → `agents.json`). Shows agents ×
+      projects × state × 24h LLM cost across all developers.
+- [ ] Project-status surface: per-project git state alongside active agents.
 
 ## Next candidates
 - [ ] Phase 3 proper: central MCP tool-registry + guardrail policy (multillm-side

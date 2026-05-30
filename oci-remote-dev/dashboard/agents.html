@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Board — OCI Agentic Dev OS</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #090b10; --card: rgba(255,255,255,.03); --border: rgba(255,255,255,.08);
+      --accent: #6c5ce7; --muted: #8a90a2; --text: #e9ecf5;
+      --running: #29c46b; --attached: #4aa3ff; --dead: #e0a13a;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: Outfit, system-ui, sans-serif; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+    header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem; }
+    h1 { font-size: clamp(1.6rem, 1rem + 2vw, 2.6rem); margin: 0; }
+    .sub { color: var(--muted); }
+    .totals { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 1rem 0 2.5rem; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.4rem; min-width: 130px; }
+    .stat .n { font-size: 1.8rem; font-weight: 800; }
+    .stat .l { color: var(--muted); font-size: .85rem; }
+    .dev { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.25rem; }
+    .dev h2 { margin: 0 0 1rem; display: flex; justify-content: space-between; align-items: center; }
+    .cost { font-size: .9rem; color: var(--muted); font-weight: 400; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: .5rem .6rem; font-size: .92rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; }
+    .pill { padding: .15rem .6rem; border-radius: 20px; font-size: .78rem; font-weight: 600; }
+    .running { background: rgba(41,196,107,.15); color: var(--running); }
+    .attached { background: rgba(74,163,255,.15); color: var(--attached); }
+    .dead { background: rgba(224,161,58,.15); color: var(--dead); }
+    .empty { color: var(--muted); font-style: italic; }
+    footer { color: var(--muted); margin-top: 2rem; font-size: .85rem; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>🛰️ Agent Board</h1>
+        <div class="sub">Live coding-agent sessions across the team — durable through disconnects.</div>
+      </div>
+      <a href="/">← Dashboard</a>
+    </header>
+    <div class="totals" id="totals"></div>
+    <div id="board"><p class="empty">Loading…</p></div>
+    <footer id="foot"></footer>
+  </div>
+  <script>
+    const ST = { running: "running", attached: "attached", dead: "dead" };
+    function fmtCost(c) { return "$" + (Number(c) || 0).toFixed(4); }
+    function render(data) {
+      const t = data.totals || { sessions: 0, running: 0, cost_usd: 0 };
+      document.getElementById("totals").innerHTML = `
+        <div class="stat"><div class="n">${t.running}</div><div class="l">active sessions</div></div>
+        <div class="stat"><div class="n">${t.sessions}</div><div class="l">total sessions</div></div>
+        <div class="stat"><div class="n">${fmtCost(t.cost_usd)}</div><div class="l">LLM cost · 24h</div></div>
+        <div class="stat"><div class="n">${(data.developers || []).length}</div><div class="l">developers</div></div>`;
+      const board = document.getElementById("board");
+      const devs = data.developers || [];
+      if (!devs.length) { board.innerHTML = `<p class="empty">No developers found.</p>`; return; }
+      board.innerHTML = devs.map(d => {
+        const rows = (d.sessions || []).map(s => `
+          <tr>
+            <td>${s.agent}</td><td>${s.project}</td>
+            <td><span class="pill ${ST[s.state] || "dead"}">${s.state}</span></td>
+            <td>${s.dir || ""}</td><td>${s.started_at || ""}</td>
+          </tr>`).join("");
+        const body = rows || `<tr><td colspan="5" class="empty">no sessions</td></tr>`;
+        return `<div class="dev"><h2>${d.name}<span class="cost">${fmtCost(d.cost_usd_24h)} · 24h</span></h2>
+          <table><thead><tr><th>Agent</th><th>Project</th><th>State</th><th>Dir</th><th>Started</th></tr></thead>
+          <tbody>${body}</tbody></table></div>`;
+      }).join("");
+    }
+    async function tick() {
+      try {
+        const r = await fetch("/agents.json?ts=" + Date.now(), { cache: "no-store" });
+        render(await r.json());
+        document.getElementById("foot").textContent = "Updated " + new Date().toLocaleTimeString() + " · refreshes every 15s";
+      } catch (e) {
+        document.getElementById("foot").textContent = "agents.json unavailable — is agent-status.timer running?";
+      }
+    }
+    tick(); setInterval(tick, 15000);
+  </script>
+</body>
+</html>

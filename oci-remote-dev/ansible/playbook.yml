@@ -575,6 +575,7 @@
                           <h1>Developer Collaboration Hub</h1>
                           <p class="subtitle">Secure sequential workspaces &amp; pairing terminals</p>
                           <a class="btn" style="max-width:320px;margin:1.5rem auto 0;display:block;" href="http://{{ wg_server_ip }}:{{ multillm_gateway_port | default(8080) }}/dashboard" target="_blank">Open MultiLLM Usage Dashboard</a>
+                          <a class="btn" style="max-width:320px;margin:0.75rem auto 0;display:block;background:#29c46b;" href="/agents.html">🛰️ Live Agent Board</a>
                       </header>
                       <div class="grid">
                       {% for dev in developers %}
