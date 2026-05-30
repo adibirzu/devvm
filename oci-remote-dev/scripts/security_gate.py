@@ -12,48 +12,67 @@ Designed to be executed as a local git pre-commit hook or in a CI/CD workflow.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
-# Compiled regex patterns from security compliance directives
-PATTERNS = [
-    # 1. OCID Patterns (tenancy, compartment, cluster, vnic, user, etc.)
-    (
-        re.compile(
-            r"ocid1\.(tenancy|compartment|instance|cluster|networksecuritygroup|loadbalancer|subnet|vnic|bootvolume|loganalytics[a-z]+|user)\.oc1\.[a-z]*\.[a-z0-9]+"
+# Tenancy-specific namespaces are NEVER hardcoded here — that would publish the very
+# secrets this scanner guards. They are loaded at runtime from the environment
+# (SECURITY_GATE_NAMESPACES, comma-separated) or a git-ignored file
+# (configs/restricted-namespaces.txt, one per line). Absent both, the namespace
+# check is skipped; the OCID/IP/key checks still run.
+NAMESPACES_FILE = Path(__file__).resolve().parent.parent / "configs" / "restricted-namespaces.txt"
+
+
+def load_restricted_namespaces() -> List[str]:
+    raw = os.environ.get("SECURITY_GATE_NAMESPACES", "").strip()
+    if not raw and NAMESPACES_FILE.exists():
+        raw = ",".join(
+            ln.strip()
+            for ln in NAMESPACES_FILE.read_text(encoding="utf-8").splitlines()
+            if ln.strip() and not ln.startswith("#")
+        )
+    return [n.strip() for n in raw.split(",") if n.strip()]
+
+
+def build_patterns(namespaces: Optional[List[str]] = None) -> List[Tuple["re.Pattern[str]", str]]:
+    """Build the detection pattern list. Tenancy namespaces are injected, never literal."""
+    if namespaces is None:
+        namespaces = load_restricted_namespaces()
+    patterns: List[Tuple["re.Pattern[str]", str]] = [
+        # 1. OCID Patterns (tenancy, compartment, cluster, vnic, user, etc.)
+        (
+            re.compile(
+                r"ocid1\.(tenancy|compartment|instance|cluster|networksecuritygroup|loadbalancer|subnet|vnic|bootvolume|loganalytics[a-z]+|user)\.oc1\.[a-z]*\.[a-z0-9]+"
+            ),
+            "Restricted OCI Resource OCID (leak danger)",
         ),
-        "Restricted OCI Resource OCID (leak danger)"
-    ),
-    # 2. Restricted Public OCI/CAP IP Ranges
-    (
-        re.compile(
-            r"\b(130\.61|161\.153|144\.24|129\.153|141\.147|82\.77|109\.166)\.[0-9]+\.[0-9]+\b"
+        # 2. Restricted Public OCI/CAP IP Ranges (Oracle-published /16 ranges)
+        (
+            re.compile(
+                r"\b(130\.61|161\.153|144\.24|129\.153|141\.147|82\.77|109\.166)\.[0-9]+\.[0-9]+\b"
+            ),
+            "Restricted Infrastructure Public IP range",
         ),
-        "Restricted Infrastructure Public IP range"
-    ),
-    # 3. Known Restricted Tenancy Namespaces
-    (
-        re.compile(r"\b(fr4zqfimuxtr|aaaadhp5ewo4eaaaaaaaaafs7q|axfo51x8x2ap|axoxdievda5j)\b"),
-        "Restricted Tenancy Namespace"
-    ),
-    # 4. Common API Secrets
-    (
-        re.compile(r"sk-[a-zA-Z0-9]{48}"),
-        "Potential OpenAI API Key"
-    ),
-    (
-        re.compile(r"sk-ant-sid01-[a-zA-Z0-9\-_]{36,96}"),
-        "Potential Anthropic API Key"
-    ),
-    # 5. Private Keys
-    (
-        re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-        "Private Key Block"
-    )
-]
+    ]
+    # 3. Known Restricted Tenancy Namespaces (loaded, never hardcoded)
+    if namespaces:
+        joined = "|".join(re.escape(n) for n in namespaces)
+        patterns.append((re.compile(r"\b(" + joined + r")\b"), "Restricted Tenancy Namespace"))
+    patterns += [
+        # 4. Common API Secrets
+        (re.compile(r"sk-[a-zA-Z0-9]{48}"), "Potential OpenAI API Key"),
+        (re.compile(r"sk-ant-sid01-[a-zA-Z0-9\-_]{36,96}"), "Potential Anthropic API Key"),
+        # 5. Private Keys
+        (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "Private Key Block"),
+    ]
+    return patterns
+
+
+PATTERNS = build_patterns()
 
 # Files/extensions that are allowed to contain placeholders or ignore
 IGNORE_PATTERNS = [
@@ -78,12 +97,13 @@ def is_ignored(path: str) -> bool:
     return False
 
 
-def scan_text(text: str, source_label: str) -> List[Tuple[int, str, str]]:
+def scan_text(text: str, source_label: str, patterns=None) -> List[Tuple[int, str, str]]:
     """Scan a text content for security violations."""
+    patterns = patterns if patterns is not None else PATTERNS
     violations = []
     lines = text.splitlines()
     for idx, line in enumerate(lines, 1):
-        for pattern, label in PATTERNS:
+        for pattern, label in patterns:
             match = pattern.search(line)
             if match:
                 violations.append((idx, label, match.group(0)))

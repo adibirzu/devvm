@@ -11,37 +11,47 @@ from scripts.security_gate import scan_text, is_ignored, PATTERNS
 
 class TestSecurityGate(unittest.TestCase):
     def test_ocid_detection(self) -> None:
-        """Verify that various OCI OCIDs are caught by the scanner."""
+        """Verify that various OCI OCIDs are caught by the scanner.
+
+        Fixtures are SYNTHETIC OCIDs (real-format, fake body) so this published test
+        leaks nothing — it only needs to match the OCID regex shape.
+        """
         violations = scan_text(
-            "tenancy_ocid = \"ocid1.tenancy.oc1..aaaaaaaaxzpxbcag7zgamh2erlggqro3y63tvm2rbkkjz4zskvagupiz7a\"",
-            "test_file"
+            'tenancy_ocid = "ocid1.tenancy.oc1..aaaaaaaaexamplesynthetictenancyfixture0001"',
+            "test_file",
         )
         self.assertTrue(len(violations) > 0)
         self.assertIn("Restricted OCI Resource OCID", violations[0][1])
 
         violations_comp = scan_text(
-            "compartment_id = \"ocid1.compartment.oc1..aaaaaaaagy3yddkkampnhj3cqm5ar7w2p7tuq5twbojyycvol6wugfav3ckq\"",
-            "test_file"
+            'compartment_id = "ocid1.compartment.oc1..aaaaaaaaexamplesyntheticcompartment0001"',
+            "test_file",
         )
         self.assertTrue(len(violations_comp) > 0)
 
     def test_restricted_ip_detection(self) -> None:
-        """Verify that public OCI restricted IPs are flagged."""
-        violations = scan_text(
-            "endpoint = \"130.61.78.98:51820\"",
-            "test_file"
-        )
+        """Verify that the Oracle-published restricted IP ranges are flagged."""
+        violations = scan_text('endpoint = "130.61.0.0:51820"', "test_file")
         self.assertTrue(len(violations) > 0)
         self.assertIn("Restricted Infrastructure Public IP range", violations[0][1])
 
     def test_tenancy_namespace_detection(self) -> None:
-        """Verify that restricted tenancy namespaces are caught."""
+        """Verify restricted namespaces are caught — using an INJECTED synthetic one,
+        so no real tenancy namespace appears in this committed/published test."""
+        from scripts.security_gate import build_patterns
         violations = scan_text(
-            "namespace = \"fr4zqfimuxtr\"",
-            "test_file"
+            'namespace = "examplesyntheticns0001"',
+            "test_file",
+            patterns=build_patterns(["examplesyntheticns0001"]),
         )
         self.assertTrue(len(violations) > 0)
         self.assertIn("Restricted Tenancy Namespace", violations[0][1])
+
+    def test_namespace_check_skipped_when_none_configured(self) -> None:
+        """With no namespaces loaded, the namespace check is simply absent (no crash)."""
+        from scripts.security_gate import build_patterns
+        labels = [lbl for _, lbl in build_patterns([])]
+        self.assertNotIn("Restricted Tenancy Namespace", labels)
 
     def test_private_key_detection(self) -> None:
         """Verify that raw private keys trigger the scanner."""
