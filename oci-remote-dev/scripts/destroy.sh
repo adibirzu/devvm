@@ -35,9 +35,11 @@ get_oci_config_value() {
 
 # Load config
 load_config() {
-    [[ ! -f "$PROJECT_DIR/.env.local" ]] && error ".env.local not found"
+    local env_file="$PROJECT_DIR/.env"
+    [[ ! -f "$env_file" && -f "$PROJECT_DIR/.env.local" ]] && env_file="$PROJECT_DIR/.env.local"
+    [[ ! -f "$env_file" ]] && error ".env not found"
     set -a
-    source "$PROJECT_DIR/.env.local"
+    source "$env_file"
     set +a
 }
 
@@ -73,7 +75,7 @@ detect_prerequisites() {
             error "gcloud CLI not found"
         fi
         if [[ -z "$GCP_PROJECT_ID" ]]; then
-            error "GCP_PROJECT_ID is not configured in .env.local"
+            error "GCP_PROJECT_ID is not configured in .env"
         fi
     elif [[ "$PROVIDER" == "AZURE" ]]; then
         if ! command -v az &>/dev/null; then

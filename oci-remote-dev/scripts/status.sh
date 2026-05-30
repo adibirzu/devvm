@@ -42,7 +42,11 @@ run_with_timeout() {
 }
 
 # Load config
-[[ -f "$PROJECT_DIR/.env.local" ]] && { set -a; source "$PROJECT_DIR/.env.local"; set +a; }
+if [[ -f "$PROJECT_DIR/.env" ]]; then
+    set -a; source "$PROJECT_DIR/.env"; set +a
+elif [[ -f "$PROJECT_DIR/.env.local" ]]; then
+    set -a; source "$PROJECT_DIR/.env.local"; set +a
+fi
 
 PROVIDER="${CLOUD_PROVIDER:-OCI}"
 

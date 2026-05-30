@@ -744,7 +744,7 @@ class MultiCloudDeployer:
         boot_disk_size = self._get_env("VM_BOOT_VOLUME_GB", "100")
         
         if not project:
-            fail("GCP Project ID is required. Add GCP_PROJECT_ID to .env.local")
+            fail("GCP Project ID is required. Add GCP_PROJECT_ID to .env")
             
         # Write cloud-init to temp file
         with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as tf:
