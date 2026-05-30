@@ -13,6 +13,7 @@ import argparse
 import base64
 import datetime as dt
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,7 +74,7 @@ class MultiCloudDeployer:
         self.args = args
         self.script_dir = Path(__file__).resolve().parent
         self.project_dir = self.script_dir.parent
-        self.env_file = Path(args.env_file).expanduser()
+        self.env_file = self._resolve_env_file(args.env_file)
         
         # Load environment
         self.env = self._parse_env_file(self.env_file)
@@ -84,6 +85,19 @@ class MultiCloudDeployer:
         self.wg_server_private_key = ""
         self.wg_server_public_key = ""
         self.developers: List[Dict[str, Any]] = []
+
+    def _resolve_env_file(self, raw_path: str) -> Path:
+        requested = Path(raw_path).expanduser()
+        if not requested.is_absolute():
+            requested = self.project_dir / requested
+        if requested.exists() or Path(raw_path).name != ".env":
+            return requested
+
+        legacy = self.project_dir / ".env.local"
+        if legacy.exists():
+            warn("Using legacy .env.local. Prefer copying .env.example to .env for new deployments.")
+            return legacy
+        return requested
 
     def _parse_env_file(self, path: Path) -> Dict[str, str]:
         data: Dict[str, str] = {}
@@ -115,6 +129,17 @@ class MultiCloudDeployer:
                 return p.read_text(encoding="utf-8").strip()
         return val.strip()
 
+    def _validate_developer(self, dev: Dict[str, Any]) -> Dict[str, Any]:
+        name = str(dev["name"])
+        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", name):
+            fail(
+                f"Invalid developer username '{name}'. Use a Linux-safe name: "
+                "lowercase letter/underscore first, then lowercase letters, digits, underscores, or hyphens."
+            )
+        if not str(dev.get("ssh_key", "")).startswith(("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-")):
+            fail(f"Developer '{name}' has no valid SSH public key configured.")
+        return dev
+
     def check_prerequisites(self) -> None:
         log(f"Checking prerequisites for cloud provider: {self.provider}...")
         if shutil.which("wg") is None:
@@ -144,14 +169,14 @@ class MultiCloudDeployer:
         dev1_wg_ip = self._get_env("WG_CLIENT_IP", "10.200.200.2")
         dev1_port = int(self._get_env("CODE_SERVER_PORT", "8443"))
         
-        self.developers.append({
+        self.developers.append(self._validate_developer({
             "name": dev1_name,
             "ssh_key": dev1_ssh,
             "wg_ip": dev1_wg_ip,
             "code_server_port": dev1_port,
             "private_key": "",
             "public_key": ""
-        })
+        }))
         
         if self._env_bool("MULTI_DEV_ENABLED", False):
             # Parse arbitrary developers dynamically: DEV_2_NAME, DEV_3_NAME, etc.
@@ -177,14 +202,14 @@ class MultiCloudDeployer:
                 
                 dev_ssh_path = self._get_env(ssh_key)
                 if dev_ssh_path:
-                    self.developers.append({
+                    self.developers.append(self._validate_developer({
                         "name": dev_name,
                         "ssh_key": self._resolve_ssh_key(dev_ssh_path),
                         "wg_ip": self._get_env(wg_key, f"10.200.200.{idx + 1}"),
                         "code_server_port": int(self._get_env(port_key, str(8443 + idx - 1))),
                         "private_key": "",
                         "public_key": ""
-                    })
+                    }))
                 idx += 1
 
     def generate_wireguard_keys(self) -> None:
@@ -331,7 +356,7 @@ class MultiCloudDeployer:
         """Deploy to OCI using native OCI CLI for maximum CAP profile compatibility."""
         log("Initiating Oracle Cloud Infrastructure (OCI) deployment via local CLI...")
         profile = self._get_env("OCI_PROFILE", "DEFAULT")
-        compartment_name = self._get_env("OCI_COMPARTMENT_NAME", "Adrian_Birzu")
+        compartment_name = self._get_env("OCI_COMPARTMENT_NAME", "")
         vm_name = self._get_env("VM_NAME", "remote-dev-server")
         shape = self._get_env("VM_SHAPE", "VM.Standard.E6.Flex")
         ocpus = self._get_env("VM_OCPUS", "4")
@@ -365,6 +390,8 @@ class MultiCloudDeployer:
                 fail(f"Failed to query compartment: {exc}")
                 
         if not comp_ocid or comp_ocid == "None" or comp_ocid == "null":
+            if compartment_name:
+                warn(f"Compartment '{compartment_name}' was not found. Falling back to tenancy root compartment.")
             comp_ocid = tenancy_ocid
             
         log(f"Resolved Compartment OCID: {comp_ocid}")
@@ -970,11 +997,18 @@ class MultiCloudDeployer:
             "install_codex": self._env_bool("INSTALL_CODEX", True),
             "install_gemini": self._env_bool("INSTALL_GEMINI", True),
             "install_code_server": self._env_bool("INSTALL_CODE_SERVER", True),
+            "install_podman": self._env_bool("INSTALL_PODMAN", True),
+            "install_csp_clis": self._env_bool("INSTALL_CSP_CLIS", True),
+            "install_aws_cli": self._env_bool("INSTALL_AWS_CLI", True),
+            "install_azure_cli": self._env_bool("INSTALL_AZURE_CLI", True),
+            "install_gcp_cli": self._env_bool("INSTALL_GCP_CLI", True),
+            "install_oci_cli": self._env_bool("INSTALL_OCI_CLI", True),
             "install_multillm_gateway": self._env_bool("INSTALL_MULTILLM_GATEWAY", True),
             "multillm_gateway_port": int(self._get_env("MULTILLM_GATEWAY_PORT", "8080")),
             "multillm_collect_interval_min": int(self._get_env("MULTILLM_COLLECT_INTERVAL_MIN", "15")),
             "multillm_user_budgets": self._get_env("MULTILLM_USER_BUDGETS", ""),
             "multillm_install_source": self._get_env("MULTILLM_INSTALL_SOURCE", "/opt/multillm"),
+            "multillm_source_path": self._get_env("MULTILLM_SOURCE_PATH", "../multillm"),
         }
 
         extra_vars_file = configs_dir / "ansible_vars.json"
@@ -1050,7 +1084,7 @@ def main() -> int:
     print(f"{NC}")
     
     p = argparse.ArgumentParser(description="Multi-Cloud remote dev VM deployer")
-    p.add_argument("--env-file", default=".env.local", help="Path to env file")
+    p.add_argument("--env-file", default=".env", help="Path to env file")
     p.add_argument("--yes", action="store_true", help="Non-interactive skip confirmation")
     p.add_argument("--replace-existing", action="store_true", help="Replace existing OCI VM")
     p.add_argument("--skip-ssh-verify", action="store_true", help="Skip SSH check")
