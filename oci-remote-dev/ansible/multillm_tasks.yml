@@ -202,6 +202,14 @@
         group: developers
         mode: '0755'
 
+    - name: MultiLLM | Install context CLI (shared memory/context bus)
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/context_bus.py"
+        dest: /usr/local/bin/context
+        owner: root
+        group: developers
+        mode: '0755'
+
     # Daily budget-breach check. usage-report exits 2 on any breach, which marks
     # the oneshot unit failed — visible in `systemctl status multillm-budget-check`
     # and journald. Only meaningful when per-user caps are configured.

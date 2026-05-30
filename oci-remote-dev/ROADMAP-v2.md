@@ -57,21 +57,33 @@ Goal: a fleet-wide view of who/what is spending tokens and where time goes.
 
 ---
 
-## Phase 2 — Shared Agent Memory / Context Bus
+## Phase 2 — Shared Agent Memory / Context Bus (in progress)
 
 Goal: let agents (and humans) share durable, scoped context across sessions and users.
 
-- **Context store** — a lightweight service (SQLite + FastAPI, or reuse the gateway's
-  process) holding namespaced key/value + vector context at three scopes:
-  `user:<name>`, `project:<slug>`, `shared`.
-- **MCP surface** — expose `context.get` / `context.put` / `context.search` as MCP
-  tools so any agent can read/write the bus with scope enforcement.
-- **Pairing integration** — `pair-claude` sessions write a shared transcript summary
-  into `project:` scope so a developer joining later has continuity.
-- **Toggle:** `ENABLE_CONTEXT_BUS=true`.
+**Delivered:**
+- ✅ **Context store** — reused the gateway's existing memory subsystem (`/api/memory`,
+  `/api/context`, FTS5-backed) rather than standing up a new service. The `memories`
+  and `shared_context` tables already carry a `tenant_id` column.
+- ✅ **MCP surface** — the gateway already exposes `llm_memory_store`,
+  `llm_memory_search`, `llm_memory_list`, `llm_memory_delete`, `llm_share_context`,
+  and `llm_get_context`, registered in each developer's `~/.claude/.mcp.json`.
+- ✅ **`context` CLI** (`/usr/local/bin/context`) — human-facing client with scope by
+  convention: `user-<whoami>` by default, `--shared` for the team namespace, `--all`
+  to search across. Pure-stdlib, covered by `tests/test_context_bus.py`.
 
-**Risk to manage:** scope leakage. Writes must be authenticated to the calling UNIX
-user; `shared`-scope writes require `developers` group membership.
+**Remaining:**
+- **Hard scope enforcement (multillm-side)** — the memory HTTP API + tool layer must
+  accept and filter on `tenant_id` (the column exists; the API still scopes only by the
+  free-text `project`). Until then, `user-<name>` is a naming convention, not a
+  boundary: writes are authenticated by the gateway API key, not by UNIX identity, and
+  any client can name any project. Closing this is the real Phase 2 deliverable.
+- **Pairing integration** — `pair-claude` sessions write a transcript summary into the
+  `shared` namespace so a developer joining later has continuity.
+- **Toggle:** `ENABLE_CONTEXT_BUS=true` (currently always-on with the gateway).
+
+**Risk to manage:** scope leakage. Once enforcement lands, writes must be authenticated
+to the calling UNIX user and `shared`-scope writes gated on `developers` membership.
 
 ---
 
