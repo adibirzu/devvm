@@ -9,8 +9,16 @@
     install_codex: true
     install_gemini: true
     install_code_server: true
+    install_podman: true
+    install_csp_clis: true
+    install_aws_cli: true
+    install_azure_cli: true
+    install_gcp_cli: true
+    install_oci_cli: true
     install_multillm_gateway: true
     multillm_gateway_port: 8080
+    install_resilience_layer: true
+    multillm_source_path: "../multillm"
     # developers list will be passed as extra_vars
     developers: []
     wg_server_ip: "10.200.200.1"
@@ -52,7 +60,105 @@
           - ssl-cert
           - python3-pip
           - python3-venv
+          - pipx
+          - gnupg
+          - lsb-release
         state: present
+
+    - name: Install local container tooling
+      ansible.builtin.apt:
+        name:
+          - podman
+          - podman-docker
+          - buildah
+          - skopeo
+          - uidmap
+          - slirp4netns
+          - fuse-overlayfs
+        state: present
+      when: install_podman | default(true)
+
+    - name: Install AWS CLI from Ubuntu packages
+      ansible.builtin.apt:
+        name: awscli
+        state: present
+      when:
+        - install_csp_clis | default(true)
+        - install_aws_cli | default(true)
+
+    - name: Ensure APT keyring directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: install_csp_clis | default(true)
+
+    - name: Install Azure CLI repository key
+      ansible.builtin.get_url:
+        url: https://packages.microsoft.com/keys/microsoft.asc
+        dest: /etc/apt/keyrings/microsoft.asc
+        mode: '0644'
+      when:
+        - install_csp_clis | default(true)
+        - install_azure_cli | default(true)
+
+    - name: Add Azure CLI APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.asc] https://packages.microsoft.com/repos/azure-cli/ {{ ansible_distribution_release }} main"
+        state: present
+        filename: azure-cli
+      when:
+        - install_csp_clis | default(true)
+        - install_azure_cli | default(true)
+
+    - name: Install Azure CLI
+      ansible.builtin.apt:
+        name: azure-cli
+        state: present
+        update_cache: true
+      when:
+        - install_csp_clis | default(true)
+        - install_azure_cli | default(true)
+
+    - name: Install Google Cloud CLI repository key
+      ansible.builtin.get_url:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        dest: /etc/apt/keyrings/google-cloud.asc
+        mode: '0644'
+      when:
+        - install_csp_clis | default(true)
+        - install_gcp_cli | default(true)
+
+    - name: Add Google Cloud CLI APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/google-cloud.asc] https://packages.cloud.google.com/apt cloud-sdk main"
+        state: present
+        filename: google-cloud-cli
+      when:
+        - install_csp_clis | default(true)
+        - install_gcp_cli | default(true)
+
+    - name: Install Google Cloud CLI
+      ansible.builtin.apt:
+        name: google-cloud-cli
+        state: present
+        update_cache: true
+      when:
+        - install_csp_clis | default(true)
+        - install_gcp_cli | default(true)
+
+    - name: Install OCI CLI with pipx
+      ansible.builtin.command:
+        cmd: pipx install oci-cli
+        creates: /usr/local/bin/oci
+      environment:
+        PIPX_HOME: /opt/pipx
+        PIPX_BIN_DIR: /usr/local/bin
+      when:
+        - install_csp_clis | default(true)
+        - install_oci_cli | default(true)
 
     - name: Install GUI and XRDP for visualization
       ansible.builtin.apt:
@@ -197,7 +303,7 @@
 
     - name: Deploy MultiLLM gateway source to remote server
       ansible.builtin.copy:
-        src: /Users/abirzu/dev/multillm
+        src: "{{ multillm_source_path }}"
         dest: /opt/
         owner: root
         group: developers
@@ -205,6 +311,10 @@
 
     - name: Configure MultiLLM team usage monitoring (gateway + per-user collectors)
       ansible.builtin.include_tasks: multillm_tasks.yml
+
+    - name: Configure disconnect-resilience layer (durable agent sessions, mosh, memory palace)
+      ansible.builtin.include_tasks: resilience_tasks.yml
+      when: install_resilience_layer | default(true)
 
     - name: Configure user environments
       ansible.builtin.include_tasks: user_tasks.yml
@@ -539,4 +649,10 @@
         name: multillm-gateway
         state: restarted
         daemon_reload: true
+      ignore_errors: true
+
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
       ignore_errors: true

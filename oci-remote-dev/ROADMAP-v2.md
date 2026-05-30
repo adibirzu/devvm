@@ -8,6 +8,28 @@ memory as first-class platform services.
 The v1 platform (provisioning, isolation, VPN, shared MultiLLM gateway, dashboards)
 is **done** — see the status table in `README.md`. v2 builds the agent layer on top.
 
+**North star:** a Linux/server equivalent of **cmux / AgentsRoom** (which are
+macOS-only) — run many coding agents in parallel on the VM with real-time status,
+local-project integration, multi-LLM usage, project status, and full **resilience to
+disconnects** — all reachable over the WireGuard VPN, including from mobile.
+
+---
+
+## Phase 0 — Resilience & Memory (done)
+
+The substrate that makes everything else survivable, shipped first:
+
+- ✅ **Durable agent sessions** — `agentctl` runs agents in detached server-side tmux;
+  they keep working through WireGuard/SSH/internet drops and reattach on reconnect.
+  `loginctl enable-linger`, mosh, and sshd keepalive back this up.
+- ✅ **Memory palace** — `.memory-palace/` structured rooms + `palace` CLI so humans
+  and agents reload full project context after a disconnect or fresh session.
+- ✅ **Status hook** — `agentctl ls --json` exposes live agent state for a future
+  visibility board.
+
+**Next on this track:** a live **multi-agent status board** on the `:80` dashboard
+(agents × projects × state × recent LLM cost) — the AgentsRoom "room" view for Linux.
+
 ---
 
 ## Design Principles
