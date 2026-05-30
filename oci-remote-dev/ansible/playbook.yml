@@ -203,61 +203,8 @@
         group: developers
         mode: '0775'
 
-    - name: Install and run the shared MultiLLM gateway
-      when: install_multillm_gateway | default(true)
-      block:
-        - name: Install MultiLLM package system-wide
-          ansible.builtin.shell: |
-            export PIP_BREAK_SYSTEM_PACKAGES=1
-            pip3 install -e /opt/multillm
-          args:
-            creates: /usr/local/bin/multillm-gateway
-          ignore_errors: true
-
-        - name: Seed shared gateway .env from template if missing
-          ansible.builtin.shell: |
-            if [ ! -f /opt/multillm/.env ] && [ -f /opt/multillm/.env.example ]; then
-              cp /opt/multillm/.env.example /opt/multillm/.env
-              chown root:developers /opt/multillm/.env
-              chmod 0660 /opt/multillm/.env
-            fi
-          args:
-            creates: /opt/multillm/.env
-
-        - name: Install shared MultiLLM gateway systemd unit
-          ansible.builtin.copy:
-            dest: /etc/systemd/system/multillm-gateway.service
-            owner: root
-            group: root
-            mode: '0644'
-            content: |
-              [Unit]
-              Description=MultiLLM Gateway (shared, VPN-reachable on :{{ multillm_gateway_port | default(8080) }})
-              After=network-online.target
-              Wants=network-online.target
-
-              [Service]
-              Type=simple
-              User=root
-              WorkingDirectory=/opt/multillm
-              Environment=GATEWAY_HOST=0.0.0.0
-              Environment=GATEWAY_PORT={{ multillm_gateway_port | default(8080) }}
-              Environment=PIP_BREAK_SYSTEM_PACKAGES=1
-              EnvironmentFile=-/opt/multillm/.env
-              ExecStart=/usr/bin/python3 -m multillm.gateway
-              Restart=always
-              RestartSec=5
-
-              [Install]
-              WantedBy=multi-user.target
-
-        - name: Enable and start the shared MultiLLM gateway
-          ansible.builtin.systemd:
-            name: multillm-gateway
-            enabled: true
-            state: restarted
-            daemon_reload: true
-          ignore_errors: true
+    - name: Configure MultiLLM team usage monitoring (gateway + per-user collectors)
+      ansible.builtin.include_tasks: multillm_tasks.yml
 
     - name: Configure user environments
       ansible.builtin.include_tasks: user_tasks.yml
@@ -585,3 +532,11 @@
         port: "{{ multillm_gateway_port | default(8080) | string }}"
         proto: tcp
       when: install_multillm_gateway | default(true)
+
+  handlers:
+    - name: Restart multillm-gateway
+      ansible.builtin.systemd:
+        name: multillm-gateway
+        state: restarted
+        daemon_reload: true
+      ignore_errors: true

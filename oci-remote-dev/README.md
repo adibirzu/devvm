@@ -131,25 +131,51 @@ The only **shared** surface is the deliberate one: `/opt/shared-dev` (group `dev
 
 ## 📊 MultiLLM Gateway & Usage Monitor
 
-The repo at `/Users/abirzu/dev/multillm` is automatically synced to **`/opt/multillm`** on the VM during deploy, installed system-wide, and run as a **single shared gateway service** reachable over the VPN.
+Each shared workstation provisions the **MultiLLM gateway** plus a **per-user usage collector**, giving you a single team view of how much every developer is spending across **their own** Claude, Codex, and Gemini accounts — without changing anyone's workflow.
+
+### How it captures multi-user, multi-account usage
+
+The AI CLIs log token usage locally, per UNIX user (`~/.claude`, `~/.codex`, `~/.gemini`). A `systemd` timer runs a collector **as each developer** (mirroring the `code-server@%i` pattern), reads that developer's local stats, and pushes a daily snapshot to the gateway tagged with the developer (`tenant_id`) and the LLM account label. Because each developer keeps using their own logins, nothing about their workflow changes — and **no prompt content is ever collected**, only token counts and a best-effort account label.
+
+```
+ devuser ─ multillm-collector@devuser.timer ─┐
+ adi     ─ multillm-collector@adi.timer ──────┤ POST /api/usage/ingest
+ royce   ─ multillm-collector@royce.timer ────┘        │
+                                                       ▼
+                                   multillm-gateway.service (10.200.200.1:8080)
+                                   team_usage table  →  GET /api/team-usage  →  /team
+```
 
 ### Architecture
 
-- **Shared system service** — `multillm-gateway.service` runs `python -m multillm.gateway` bound to `0.0.0.0:8080`, reachable at `http://10.200.200.1:8080` over the tunnel. One gateway for the whole VM (no per-user port collisions), firewalled to the WireGuard subnet only.
-- **Per-user auto-start hook** — each developer's `~/.claude/hooks.json` gets a `SessionStart` hook (`hooks/start-gateway.sh`) that health-checks the gateway and starts a local one only if the shared service is down. Running `claude` "just works."
-- **Per-user launchers** — `~/.local/bin/claude-multillm` and `~/.local/bin/codex-multillm` point `ANTHROPIC_BASE_URL` at the gateway so all agent traffic is proxied and tracked.
-- **MCP registration** — the `multillm` MCP server is registered in each user's `~/.claude/.mcp.json` (and via `codex mcp add` for the Codex CLI) with `LLM_GATEWAY_URL=http://localhost:8080`.
-- **Live dashboard** — token counts, cost rollups, response latency, and side-by-side backend comparisons at:
+- **Shared gateway service** — `multillm-gateway.service` runs as a hardened, dedicated `multillm` user, bound to the WireGuard IP and firewalled to the WG subnet only. Data lives in `/var/lib/multillm`; config in `/etc/multillm/`.
+- **Per-user collectors** — `multillm-collector@<user>.timer` fires every 15 min (tunable), running `multillm-collect --user <user>` as that developer. Snapshots UPSERT on `(user, backend, account, model, day)`, so re-runs are idempotent and never double-count.
+- **Auto-generated API key** — a 40-char key is generated once on first deploy (persisted at `/etc/multillm/api_key`, never rotated on re-run). Collectors read it from the developer-group-readable `/etc/multillm/collector.env`.
+- **Team dashboard** — per-developer and per-account token + cost rollups, backend breakdown, and over-budget flags:
 
   ```
-  http://10.200.200.1:8080/dashboard
+  http://10.200.200.1:8080/team          # multi-user usage
+  http://10.200.200.1:8080/dashboard     # full gateway dashboard
+  ```
+
+- **`usage-report` CLI** — terminal-side rollup at `/usr/local/bin/usage-report` for
+  developers who live in the shell. Honors `MULTILLM_GATEWAY` (set in
+  `/etc/multillm/collector.env`):
+
+  ```bash
+  usage-report                    # aggregate: by model + by project, last 24h
+  usage-report --team --hours 168 # per-developer (tenant) rollup, last 7 days
+  usage-report --team --json      # raw JSON for scripting
   ```
 
 ### Toggles
 
 ```bash
-INSTALL_MULTILLM_GATEWAY=true   # set false to skip the shared gateway
-MULTILLM_GATEWAY_PORT=8080      # change the gateway/dashboard port
+INSTALL_MULTILLM_GATEWAY=true       # set false to skip monitoring entirely
+MULTILLM_GATEWAY_PORT=8080          # gateway / dashboard port (WG-only)
+MULTILLM_COLLECT_INTERVAL_MIN=15    # how often each collector reports
+MULTILLM_USER_BUDGETS="adi=5,royce=10"   # optional per-user daily USD caps → over_budget flag
+MULTILLM_INSTALL_SOURCE=/opt/multillm    # pip target: synced source (default), PyPI spec, or git URL
 ```
 
 ---
@@ -240,8 +266,12 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | AI CLIs (Claude / Codex / Gemini), Cursor | ✅ Implemented |
 | Shared MultiLLM gateway service + `/dashboard` over VPN | ✅ Implemented |
 | Per-user MultiLLM hooks, launchers, MCP registration | ✅ Implemented |
+| Per-developer usage attribution (collectors → `tenant=<user>`) | ✅ Implemented |
+| Team usage dashboard `/team` + `usage-report` CLI | ✅ Implemented |
+| Per-user daily budget plumbing (`MULTILLM_USER_BUDGETS`) | ✅ Implemented |
 | Dynamic per-developer landing dashboard cards | ✅ Implemented |
 | Security gate scanner + tests | ✅ Implemented |
+| Budget-breach warning UX + structured log sink | 🔭 Roadmap (Phase 1 tail) |
 | Cross-developer shared agent memory / context bus | 🔭 Roadmap (see `ROADMAP-v2.md`) |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |

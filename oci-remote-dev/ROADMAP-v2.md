@@ -25,20 +25,30 @@ is **done** — see the status table in `README.md`. v2 builds the agent layer o
 
 ---
 
-## Phase 1 — Observability & Cost Control (highest ROI, mostly wiring)
+## Phase 1 — Observability & Cost Control (in progress)
 
 Goal: a fleet-wide view of who/what is spending tokens and where time goes.
 
-- **Per-developer usage attribution** — tag gateway requests with the originating
-  UNIX user (via a per-user gateway API key or header injected by `claude-multillm`).
-- **Cost/burn dashboard** — extend `/dashboard` with per-user daily spend, model mix,
-  and a budget threshold with a soft warning banner.
-- **Structured agent logs** — ship gateway + agent session logs to a local
-  `journald`/SQLite sink, queryable from the dashboard.
-- **Toggle:** `ENABLE_USAGE_ATTRIBUTION=true`.
+**Delivered:**
+- ✅ **Per-developer usage attribution** — `multillm-collector@<user>.timer` runs as
+  each developer and pushes their local AI-CLI stats to the gateway tagged
+  `tenant=<user>` (`ansible/multillm_tasks.yml`). Attribution happens at collection
+  time, so it works with the single shared gateway — no per-user gateways needed.
+- ✅ **Team dashboard + API** — the gateway serves `/team`, `/api/team-usage`, and
+  `/api/usage/ingest`; the unit is hardened (dedicated `multillm` user, venv,
+  `ProtectSystem=strict`) and VPN-scoped.
+- ✅ **`usage-report` CLI** (`/usr/local/bin/usage-report`) — aggregate rollup
+  (`--`, by model/project) and per-developer rollup (`--team`, by tenant), honoring
+  `MULTILLM_GATEWAY`. Pure-stdlib, covered by `tests/test_usage_report.py`.
+- ✅ **Per-user daily budgets** — `MULTILLM_USER_BUDGETS="user=usd,…"` plumbed into
+  the gateway env.
 
-**New tools:** a small `usage-report` CLI (`/usr/local/bin/usage-report`) that prints
-per-user token/cost rollups; a `gateway-health` check wired into `dev-dashboard`.
+**Remaining:**
+- **Budget enforcement UX** — surface a soft warning banner on `/team` (and optionally
+  on the landing dashboard) when a developer crosses their daily cap.
+- **Structured agent log sink** — ship gateway + session logs (already `LOG_FORMAT=json`)
+  to a queryable local sink and link it from the dashboard.
+- **`gateway-health` panel** — fold the `/health` probe into the `:80` landing page.
 
 ---
 
