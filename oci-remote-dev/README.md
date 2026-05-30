@@ -249,7 +249,7 @@ WG_DNS="1.1.1.1, 8.8.8.8"      # only meaningful with a full tunnel
 
 Both deployers (`deploy_multicloud.py` and `deploy_sdk.py`) honor these flags identically, and the behavior is locked by tests in `tests/test_deploy_multicloud.py`.
 
-> **Already connected and seeing broken DNS?** Re-import the regenerated `configs/wireguard/client_<you>.conf` into the WireGuard app (the `DNS =` line has been removed) and reconnect.
+> **Already connected and seeing broken DNS?** The WireGuard **app** caches the config it imported, so editing the file isn't enough. Bring the tunnel up with `./scripts/connect.sh wg-up` (uses `wg-quick`, which reads the current file), or delete + re-import the tunnel in the app. See [Troubleshooting](#-troubleshooting).
 
 ---
 
@@ -347,7 +347,33 @@ Covers cloud-init rendering, security-gate logic, and the WireGuard split-tunnel
 ## 💡 Troubleshooting
 
 ### Internet / DNS breaks after WireGuard connects (macOS)
-Your client config has a stale `DNS =` line. Re-import the regenerated `configs/wireguard/client_<you>.conf` (DNS removed) and reconnect, or set `WG_DNS=""` and redeploy. See [WireGuard VPN & Mac Routing](#-wireguard-vpn--mac-routing).
+
+**Symptom:** raw-IP `ping 1.1.1.1` works, but names don't resolve and nothing loads.
+
+**Root cause:** the **WireGuard macOS app stores a *copy* of the config inside its
+NetworkExtension at import time.** Editing `client_<you>.conf` on disk afterward does
+**not** update what the app pushes — so a stale `DNS = 1.1.1.1, 8.8.8.8` line keeps
+getting installed as the system resolver, scoped to the tunnel. On a split tunnel
+(`AllowedIPs = 10.200.200.0/24`) those DNS servers aren't routed through the tunnel, so
+every query blackholes.
+
+**Fix — use `wg-quick` (reads the current file, no cache):**
+
+```bash
+./scripts/connect.sh -u <you> wg-up      # uses wg-quick under the hood; prompts for sudo
+./scripts/connect.sh -u <you> wg-down
+```
+
+`connect.sh` injects the Homebrew prefix into the sudo PATH so `wg-quick` finds bash 4+
+(macOS ships 3.2) and the `wg` binary. If you previously imported the tunnel into the
+**app, delete that tunnel** (`WireGuard.app → select → minus`) so it can't reconnect with
+the stale DNS.
+
+**If you must keep using the app:** delete the tunnel and **re-import** the regenerated
+`client_<you>.conf` (the `DNS =` line is gone); a plain re-activate is not enough. To run
+`connect.sh` against the app instead of `wg-quick`, set `WG_USE_APP=1`.
+
+See [WireGuard VPN & Mac Routing](#-wireguard-vpn--mac-routing).
 
 ### Landing page at `http://10.200.200.1` not loading
 1. `ping 10.200.200.1` — are you on the VPN?
