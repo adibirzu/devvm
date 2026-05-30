@@ -728,7 +728,7 @@ class SDKDeployer:
         if not self.runtime.tenancy_ocid:
             self.runtime.tenancy_ocid = cfg_tenancy
         if not self.runtime.tenancy_ocid:
-            fail("Could not resolve OCI tenancy OCID from .env.local or OCI profile.")
+            fail("Could not resolve OCI tenancy OCID from .env or OCI profile.")
 
         log(f"Profile: {self.runtime.profile}")
         log(f"Tenancy: {self.runtime.tenancy_ocid}")

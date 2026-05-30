@@ -10,7 +10,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-[[ -f "$PROJECT_DIR/.env.local" ]] && { set -a; source "$PROJECT_DIR/.env.local"; set +a; }
+if [[ -f "$PROJECT_DIR/.env" ]]; then
+    set -a; source "$PROJECT_DIR/.env"; set +a
+elif [[ -f "$PROJECT_DIR/.env.local" ]]; then
+    set -a; source "$PROJECT_DIR/.env.local"; set +a
+fi
 
 PUBLIC_IP="${1:-}"
 if [[ -z "$PUBLIC_IP" && -f "$PROJECT_DIR/configs/deployment-info.txt" ]]; then
