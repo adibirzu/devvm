@@ -1,0 +1,43 @@
+# Environment files with secrets
+.env.local
+.env.*.local
+
+# Generated configs with sensitive data
+configs/
+!configs/.gitkeep
+
+# WireGuard / SSH keys
+*.key
+*.pub
+*.pem
+# Stray / extensionless OpenSSH private keys (e.g. test keypair "8")
+8
+id_rsa
+id_ed25519
+id_ecdsa
+
+# Terraform state (if using terraform)
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Python build/test artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+*.egg-info/

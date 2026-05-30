@@ -1,0 +1,587 @@
+---
+- name: Configure Multi-Developer Collaboration Environment
+  hosts: all
+  become: true
+  vars:
+    node_version: "20"
+    install_cursor: true
+    install_claude_code: true
+    install_codex: true
+    install_gemini: true
+    install_code_server: true
+    install_multillm_gateway: true
+    multillm_gateway_port: 8080
+    # developers list will be passed as extra_vars
+    developers: []
+    wg_server_ip: "10.200.200.1"
+    wg_network: "10.200.200.0/24"
+
+  tasks:
+    - name: Ensure developers group exists
+      ansible.builtin.group:
+        name: developers
+        state: present
+
+    - name: Add developers to the developers group
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        groups: developers
+        append: true
+      loop: "{{ developers }}"
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install system dependencies
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - jq
+          - wireguard
+          - wireguard-tools
+          - tmux
+          - git
+          - vim
+          - ufw
+          - dbus-x11
+          - ssl-cert
+          - python3-pip
+          - python3-venv
+        state: present
+
+    - name: Install GUI and XRDP for visualization
+      ansible.builtin.apt:
+        name:
+          - xfce4
+          - xfce4-goodies
+          - xrdp
+        state: present
+
+    - name: Enable and start XRDP services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - xrdp
+        - xrdp-sesman
+
+    - name: Add xrdp user to ssl-cert group
+      ansible.builtin.user:
+        name: xrdp
+        groups: ssl-cert
+        append: true
+
+    - name: Ensure polkit localauthority directory exists
+      ansible.builtin.file:
+        path: /etc/polkit-1/localauthority/50-local.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Configure polkit for XRDP colord
+      ansible.builtin.copy:
+        dest: /etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Allow Colord all Users]
+          Identity=unix-user:*
+          Action=org.freedesktop.color-manager.create-device;org.freedesktop.color-manager.create-profile;org.freedesktop.color-manager.delete-device;org.freedesktop.color-manager.delete-profile;org.freedesktop.color-manager.modify-device;org.freedesktop.color-manager.modify-profile
+          ResultAny=no
+          ResultInactive=no
+          ResultActive=yes
+
+    - name: Set default XRDP startwm script to XFCE
+      ansible.builtin.copy:
+        dest: /etc/xrdp/startwm.sh
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          unset DBUS_SESSION_BUS_ADDRESS
+          unset XDG_RUNTIME_DIR
+          if [ -r /etc/default/locale ]; then
+            . /etc/default/locale
+            export LANG LANGUAGE
+          fi
+          exec /usr/bin/startxfce4
+
+    - name: Configure XFCE session for each developer
+      ansible.builtin.copy:
+        dest: "/home/{{ item.name }}/.xsession"
+        owner: "{{ item.name }}"
+        group: "{{ item.name }}"
+        mode: '0644'
+        content: |
+          xfce4-session
+      loop: "{{ developers }}"
+
+    - name: Install NodeSource APT GPG key
+      ansible.builtin.get_url:
+        url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+        dest: /etc/apt/keyrings/nodesource.asc
+        mode: '0644'
+
+    - name: Add NodeSource APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/nodesource.asc] https://deb.nodesource.com/node_{{ node_version }}.x nodistro main"
+        state: present
+        filename: nodesource
+
+    - name: Install Node.js
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+        update_cache: true
+
+    - name: Install global package managers
+      ansible.builtin.npm:
+        name: "{{ item }}"
+        global: true
+        state: present
+      loop:
+        - pnpm
+        - yarn
+
+    - name: Create secure shared workspace directory
+      ansible.builtin.file:
+        path: /opt/shared-dev
+        state: directory
+        owner: root
+        group: developers
+        mode: '2770'
+
+    - name: Setup developer shared workspace symlinks and umask
+      block:
+        - name: Link shared workspace in homes
+          ansible.builtin.file:
+            src: /opt/shared-dev
+            dest: "/home/{{ item.name }}/shared-workspace"
+            state: link
+            owner: "{{ item.name }}"
+            group: "{{ item.name }}"
+          loop: "{{ developers }}"
+
+        - name: Configure umask 002 for developers
+          ansible.builtin.lineinfile:
+            path: "/home/{{ item.name }}/.bashrc"
+            line: "umask 002"
+            insertafter: EOF
+            state: present
+          loop: "{{ developers }}"
+
+    - name: Download Cursor AppImage globally
+      when: install_cursor
+      block:
+        - name: Create Cursor directory
+          ansible.builtin.file:
+            path: /opt/cursor
+            state: directory
+            mode: '0755'
+
+        - name: Download Cursor binary
+          ansible.builtin.get_url:
+            url: "https://downloader.cursor.sh/linux/appImage/x64"
+            dest: /opt/cursor/cursor.AppImage
+            mode: '0755'
+          ignore_errors: true
+
+    - name: Deploy MultiLLM gateway source to remote server
+      ansible.builtin.copy:
+        src: /Users/abirzu/dev/multillm
+        dest: /opt/
+        owner: root
+        group: developers
+        mode: '0775'
+
+    - name: Install and run the shared MultiLLM gateway
+      when: install_multillm_gateway | default(true)
+      block:
+        - name: Install MultiLLM package system-wide
+          ansible.builtin.shell: |
+            export PIP_BREAK_SYSTEM_PACKAGES=1
+            pip3 install -e /opt/multillm
+          args:
+            creates: /usr/local/bin/multillm-gateway
+          ignore_errors: true
+
+        - name: Seed shared gateway .env from template if missing
+          ansible.builtin.shell: |
+            if [ ! -f /opt/multillm/.env ] && [ -f /opt/multillm/.env.example ]; then
+              cp /opt/multillm/.env.example /opt/multillm/.env
+              chown root:developers /opt/multillm/.env
+              chmod 0660 /opt/multillm/.env
+            fi
+          args:
+            creates: /opt/multillm/.env
+
+        - name: Install shared MultiLLM gateway systemd unit
+          ansible.builtin.copy:
+            dest: /etc/systemd/system/multillm-gateway.service
+            owner: root
+            group: root
+            mode: '0644'
+            content: |
+              [Unit]
+              Description=MultiLLM Gateway (shared, VPN-reachable on :{{ multillm_gateway_port | default(8080) }})
+              After=network-online.target
+              Wants=network-online.target
+
+              [Service]
+              Type=simple
+              User=root
+              WorkingDirectory=/opt/multillm
+              Environment=GATEWAY_HOST=0.0.0.0
+              Environment=GATEWAY_PORT={{ multillm_gateway_port | default(8080) }}
+              Environment=PIP_BREAK_SYSTEM_PACKAGES=1
+              EnvironmentFile=-/opt/multillm/.env
+              ExecStart=/usr/bin/python3 -m multillm.gateway
+              Restart=always
+              RestartSec=5
+
+              [Install]
+              WantedBy=multi-user.target
+
+        - name: Enable and start the shared MultiLLM gateway
+          ansible.builtin.systemd:
+            name: multillm-gateway
+            enabled: true
+            state: restarted
+            daemon_reload: true
+          ignore_errors: true
+
+    - name: Configure user environments
+      ansible.builtin.include_tasks: user_tasks.yml
+      loop: "{{ developers }}"
+      loop_control:
+        loop_var: dev
+
+    - name: Install AI CLI agents globally
+      block:
+        - name: Install Claude Code CLI
+          ansible.builtin.npm:
+            name: "@anthropic-ai/claude-code"
+            global: true
+            state: present
+          when: install_claude_code
+          ignore_errors: true
+
+        - name: Install Codex CLI
+          ansible.builtin.npm:
+            name: "@openai/codex"
+            global: true
+            state: present
+          when: install_codex
+          ignore_errors: true
+
+        - name: Install Gemini CLI
+          ansible.builtin.npm:
+            name: "@google/generative-ai-cli"
+            global: true
+            state: present
+          when: install_gemini
+          ignore_errors: true
+
+    - name: Install pair-claude shared session helper
+      ansible.builtin.copy:
+        dest: /usr/local/bin/pair-claude
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          set -euo pipefail
+          SOCKET="/tmp/shared-claude.sock"
+          SESSION_NAME="shared-claude"
+
+          show_help() {
+              echo "Usage: pair-claude <command> [arguments]"
+              echo ""
+              echo "Commands:"
+              echo "  start       Start a shared Claude Code session in tmux"
+              echo "  join        Join / attach to the active shared Claude Code session"
+              echo "  status      Check the status of the shared session and active users"
+              echo "  kill        Terminate the shared session"
+              echo "  help        Show this help message"
+          }
+
+          case "${1:-help}" in
+              start)
+                  echo "Starting shared Claude Code session..."
+                  if tmux -S "$SOCKET" has-session -t "$SESSION_NAME" 2>/dev/null; then
+                      echo "Session '$SESSION_NAME' is already running. Attaching..."
+                      exec tmux -S "$SOCKET" attach-session -t "$SESSION_NAME"
+                  fi
+                  rm -f "$SOCKET"
+                  CMD="claude"
+                  if ! command -v claude &>/dev/null; then
+                      CMD="bash"
+                  fi
+                  tmux -S "$SOCKET" new-session -d -s "$SESSION_NAME" "$CMD"
+                  if getent group developers >/dev/null; then
+                      chgrp developers "$SOCKET"
+                  fi
+                  chmod 770 "$SOCKET"
+                  echo "Shared session started! Other developers can run: pair-claude join"
+                  exec tmux -S "$SOCKET" attach-session -t "$SESSION_NAME"
+                  ;;
+              join)
+                  if [ ! -S "$SOCKET" ]; then
+                      echo "Error: Shared session socket not found. Run 'pair-claude start' first."
+                      exit 1
+                  fi
+                  exec tmux -S "$SOCKET" attach-session -t "$SESSION_NAME"
+                  ;;
+              status)
+                  if [ -S "$SOCKET" ] && tmux -S "$SOCKET" has-session -t "$SESSION_NAME" 2>/dev/null; then
+                      echo "Shared session: ACTIVE"
+                  else
+                      echo "Shared session: INACTIVE"
+                  fi
+                  ;;
+              kill)
+                  tmux -S "$SOCKET" kill-session -t "$SESSION_NAME" 2>/dev/null || true
+                  rm -f "$SOCKET"
+                  echo "Shared session killed."
+                  ;;
+              *)
+                  show_help
+                  ;;
+          esac
+
+    - name: Install systemd unit template for code-server
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/code-server@.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=code-server for %i
+          After=network.target
+
+          [Service]
+          Type=exec
+          User=%i
+          ExecStart=/home/%i/.local/bin/code-server
+          Restart=always
+          RestartSec=5
+          Environment=HOME=/home/%i
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start code-server services for each user
+      ansible.builtin.systemd:
+        name: "code-server@{{ item.name }}"
+        enabled: true
+        state: restarted
+        daemon_reload: true
+      loop: "{{ developers }}"
+      when: install_code_server
+
+    - name: Install landing dashboard page
+      block:
+        - name: Create dashboard directory
+          ansible.builtin.file:
+            path: /opt/dashboard
+            state: directory
+            mode: '0755'
+
+        - name: Build dashboard landing template
+          ansible.builtin.copy:
+            dest: /opt/dashboard/index.html
+            owner: root
+            group: root
+            mode: '0644'
+            content: |
+              <!DOCTYPE html>
+              <html lang="en">
+              <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>Developer Collaboration Hub</title>
+                  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+                  <style>
+                      :root {
+                          --bg: #090b10;
+                          --card-bg: rgba(255, 255, 255, 0.03);
+                          --card-border: rgba(255, 255, 255, 0.08);
+                          --accent: #6c5ce7;
+                          --accent-hover: #5b4bc4;
+                          --text: #f1f2f6;
+                          --text-muted: #a4b0be;
+                      }
+                      * { box-sizing: border-box; margin: 0; padding: 0; }
+                      body {
+                          font-family: 'Outfit', sans-serif;
+                          background: var(--bg);
+                          color: var(--text);
+                          min-height: 100vh;
+                          display: flex;
+                          flex-direction: column;
+                          align-items: center;
+                          justify-content: center;
+                          padding: 2rem;
+                          overflow-x: hidden;
+                      }
+                      .container {
+                          width: 100%;
+                          max-width: 1200px;
+                          z-index: 1;
+                      }
+                      header {
+                          text-align: center;
+                          margin-bottom: 4rem;
+                      }
+                      h1 {
+                          font-size: 3rem;
+                          font-weight: 800;
+                          background: linear-gradient(135deg, #a8a5ff 0%, #6c5ce7 100%);
+                          -webkit-background-clip: text;
+                          -webkit-text-fill-color: transparent;
+                          margin-bottom: 0.5rem;
+                      }
+                      .subtitle { color: var(--text-muted); font-size: 1.1rem; }
+                      .grid {
+                          display: grid;
+                          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+                          gap: 2rem;
+                          margin-bottom: 4rem;
+                      }
+                      .card {
+                          background: var(--card-bg);
+                          border: 1px solid var(--card-border);
+                          border-radius: 16px;
+                          padding: 2rem;
+                          backdrop-filter: blur(12px);
+                          transition: all 0.3s ease;
+                          display: flex;
+                          flex-direction: column;
+                          justify-content: space-between;
+                      }
+                      .card:hover {
+                          transform: translateY(-5px);
+                          border-color: rgba(108, 92, 231, 0.4);
+                          box-shadow: 0 10px 30px rgba(108, 92, 231, 0.1);
+                      }
+                      .card-header {
+                          display: flex;
+                          justify-content: space-between;
+                          align-items: start;
+                          margin-bottom: 1.5rem;
+                      }
+                      .dev-badge {
+                          background: rgba(108, 92, 231, 0.15);
+                          color: #a8a5ff;
+                          border: 1px solid rgba(108, 92, 231, 0.3);
+                          padding: 0.25rem 0.75rem;
+                          border-radius: 20px;
+                          font-size: 0.8rem;
+                          font-weight: 600;
+                      }
+                      .info-row {
+                          display: flex;
+                          justify-content: space-between;
+                          margin-bottom: 0.75rem;
+                          font-size: 0.95rem;
+                      }
+                      .info-label { color: var(--text-muted); }
+                      .info-value { font-weight: 600; }
+                      .btn {
+                          display: inline-block;
+                          background: var(--accent);
+                          color: #fff;
+                          text-decoration: none;
+                          padding: 0.75rem;
+                          border-radius: 8px;
+                          text-align: center;
+                          font-weight: 600;
+                          margin-top: 1.5rem;
+                          transition: background 0.2s ease;
+                      }
+                      .btn:hover { background: var(--accent-hover); }
+                  </style>
+              </head>
+              <body>
+                  <div class="container">
+                      <header>
+                          <h1>Developer Collaboration Hub</h1>
+                          <p class="subtitle">Secure sequential workspaces &amp; pairing terminals</p>
+                          <a class="btn" style="max-width:320px;margin:1.5rem auto 0;display:block;" href="http://{{ wg_server_ip }}:{{ multillm_gateway_port | default(8080) }}/dashboard" target="_blank">Open MultiLLM Usage Dashboard</a>
+                      </header>
+                      <div class="grid">
+                      {% for dev in developers %}
+                          <div class="card">
+                              <div>
+                                  <div class="card-header">
+                                      <h2>{{ dev.name }}</h2>
+                                      <span class="dev-badge">isolated UNIX user</span>
+                                  </div>
+                                  <div class="info-row"><span class="info-label">SSH</span><span class="info-value">{{ dev.name }}@{{ wg_server_ip }}</span></div>
+                                  <div class="info-row"><span class="info-label">Web IDE port</span><span class="info-value">{{ dev.code_server_port }}</span></div>
+                                  <div class="info-row"><span class="info-label">VPN IP</span><span class="info-value">{{ dev.wg_ip }}</span></div>
+                              </div>
+                              <a class="btn" href="http://{{ wg_server_ip }}:{{ dev.code_server_port }}" target="_blank">Launch {{ dev.name }} Web IDE</a>
+                          </div>
+                      {% endfor %}
+                      </div>
+                  </div>
+              </body>
+              </html>
+
+    - name: Create Python SimpleHTTPServer unit for dashboard
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dev-dashboard.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Developer Landing Page Dashboard
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory=/opt/dashboard
+          ExecStart=/usr/bin/python3 -m http.server 80
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start dev-dashboard service
+      ansible.builtin.systemd:
+        name: dev-dashboard
+        enabled: true
+        state: restarted
+        daemon_reload: true
+
+    - name: Ensure UFW allows SSH, Web, RDP and VPN
+      ansible.builtin.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+      loop:
+        - { port: '22', proto: 'tcp' }
+        - { port: '80', proto: 'tcp' }
+        - { port: '3389', proto: 'tcp' }
+        - { port: '51820', proto: 'udp' }
+
+    - name: Restrict MultiLLM gateway port to the WireGuard subnet only
+      ansible.builtin.ufw:
+        rule: allow
+        from_ip: "{{ wg_network | default('10.200.200.0/24') }}"
+        port: "{{ multillm_gateway_port | default(8080) | string }}"
+        proto: tcp
+      when: install_multillm_gateway | default(true)
