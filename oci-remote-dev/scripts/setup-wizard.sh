@@ -1,7 +1,7 @@
 #!/bin/bash
 # OCI Remote Development Server - Interactive Setup Wizard
 # =========================================================
-# Creates .env.local configuration interactively
+# Creates .env configuration interactively
 
 set -e
 
@@ -15,7 +15,7 @@ NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-ENV_FILE="$PROJECT_DIR/.env.local"
+ENV_FILE="$PROJECT_DIR/.env"
 
 # Detect OCI CLI
 detect_oci_cli() {
@@ -162,12 +162,14 @@ main() {
     AZURE_LOCATION=""
     AZURE_VM_SIZE=""
     AZURE_SUBNET_ID=""
+    MULTILLM_SOURCE_PATH="../multillm"
 
     VM_NAME="remote-dev-server"
     VM_SHAPE="VM.Standard.E6.Flex"
     VM_OCPUS=4
     VM_MEMORY_GB=32
     VM_BOOT_VOLUME_GB=100
+    UBUNTU_VERSION="24.04"
     VCN_NAME="remote-dev-vcn"
     VCN_CIDR="10.0.0.0/16"
     SUBNET_CIDR="10.0.1.0/24"
@@ -196,7 +198,7 @@ main() {
         echo -e "Region: ${GREEN}$OCI_REGION${NC}"
 
         list_compartments "$OCI_PROFILE" "$OCI_TENANCY_OCID"
-        prompt OCI_COMPARTMENT_NAME "Compartment name" "Adrian_Birzu"
+        prompt OCI_COMPARTMENT_NAME "Compartment name (empty for tenancy root)" ""
         
         prompt VM_NAME "Instance name" "remote-dev-server"
         prompt VM_SHAPE "VM Shape" "VM.Standard.E6.Flex"
@@ -307,6 +309,21 @@ main() {
     fi
 
     prompt_yn INSTALL_CURSOR "Install Cursor IDE?" "y"
+    prompt_yn INSTALL_PODMAN "Install Podman local container tooling?" "y"
+    prompt_yn INSTALL_CSP_CLIS "Install all CSP CLIs on the VM?" "y"
+    if [[ "$INSTALL_CSP_CLIS" == "true" ]]; then
+        INSTALL_OCI_CLI=true
+        INSTALL_AWS_CLI=true
+        INSTALL_GCP_CLI=true
+        INSTALL_AZURE_CLI=true
+    else
+        prompt_yn INSTALL_OCI_CLI "Install OCI CLI?" "y"
+        prompt_yn INSTALL_AWS_CLI "Install AWS CLI?" "y"
+        prompt_yn INSTALL_GCP_CLI "Install Google Cloud CLI?" "y"
+        prompt_yn INSTALL_AZURE_CLI "Install Azure CLI?" "y"
+    fi
+
+    prompt MULTILLM_SOURCE_PATH "Local MultiLLM source path copied during Ansible setup" "../multillm"
 
     prompt NODE_VERSION "Node.js version" "20"
     prompt PYTHON_VERSION "Python version" "3.12"
@@ -320,36 +337,31 @@ main() {
 
     # ========== Multi-Developer Configuration ==========
     echo -e "\n${BLUE}=== Multi-Developer Configuration ===${NC}"
-    prompt_yn MULTI_DEV_ENABLED "Enable Multi-Developer support (for up to 3 developers)?" "n"
+    prompt_yn MULTI_DEV_ENABLED "Add additional developer users during initial VM creation?" "n"
+    ADDITIONAL_DEV_ENV=""
     if [[ "$MULTI_DEV_ENABLED" == "true" ]]; then
-        echo -e "\n${BLUE}=== Developer 2 Configuration ===${NC}"
-        prompt DEV_2_NAME "Developer 2 name (e.g. alice)" "alice"
-        prompt DEV_2_SSH_KEY_PATH "Developer 2 SSH public key path or raw key" ""
-        prompt DEV_2_WG_IP "Developer 2 WireGuard VPN IP" "10.200.200.3"
-        prompt DEV_2_CODE_SERVER_PORT "Developer 2 code-server port" "8444"
+        DEV_INDEX=2
+        while true; do
+            echo -e "\n${BLUE}=== Developer $DEV_INDEX Configuration ===${NC}"
+            DEFAULT_DEV_NAME="dev$DEV_INDEX"
+            DEFAULT_WG_IP="10.200.200.$((DEV_INDEX + 1))"
+            DEFAULT_CODE_PORT=$((8443 + DEV_INDEX - 1))
+            prompt DEV_NAME "Developer $DEV_INDEX Linux username" "$DEFAULT_DEV_NAME"
+            prompt DEV_SSH_KEY_PATH "Developer $DEV_INDEX SSH public key path or raw key" ""
+            prompt DEV_WG_IP "Developer $DEV_INDEX WireGuard VPN IP" "$DEFAULT_WG_IP"
+            prompt DEV_CODE_SERVER_PORT "Developer $DEV_INDEX code-server port" "$DEFAULT_CODE_PORT"
 
-        echo -e "\n${BLUE}=== Developer 3 Configuration ===${NC}"
-        prompt_yn ADD_DEV_3 "Add a third developer?" "n"
-        if [[ "$ADD_DEV_3" == "true" ]]; then
-            prompt DEV_3_NAME "Developer 3 name (e.g. bob)" "bob"
-            prompt DEV_3_SSH_KEY_PATH "Developer 3 SSH public key path or raw key" ""
-            prompt DEV_3_WG_IP "Developer 3 WireGuard VPN IP" "10.200.200.4"
-            prompt DEV_3_CODE_SERVER_PORT "Developer 3 code-server port" "8445"
-        else
-            DEV_3_NAME=""
-            DEV_3_SSH_KEY_PATH=""
-            DEV_3_WG_IP="10.200.200.4"
-            DEV_3_CODE_SERVER_PORT=8445
-        fi
-    else
-        DEV_2_NAME=""
-        DEV_2_SSH_KEY_PATH=""
-        DEV_2_WG_IP="10.200.200.3"
-        DEV_2_CODE_SERVER_PORT=8444
-        DEV_3_NAME=""
-        DEV_3_SSH_KEY_PATH=""
-        DEV_3_WG_IP="10.200.200.4"
-        DEV_3_CODE_SERVER_PORT=8445
+            ADDITIONAL_DEV_ENV+=$'\n'"DEV_${DEV_INDEX}_NAME=\"$DEV_NAME\""
+            ADDITIONAL_DEV_ENV+=$'\n'"DEV_${DEV_INDEX}_SSH_KEY_PATH=\"$DEV_SSH_KEY_PATH\""
+            ADDITIONAL_DEV_ENV+=$'\n'"DEV_${DEV_INDEX}_WG_IP=\"$DEV_WG_IP\""
+            ADDITIONAL_DEV_ENV+=$'\n'"DEV_${DEV_INDEX}_CODE_SERVER_PORT=$DEV_CODE_SERVER_PORT"
+
+            prompt_yn ADD_ANOTHER_DEV "Add another developer?" "n"
+            if [[ "$ADD_ANOTHER_DEV" != "true" ]]; then
+                break
+            fi
+            DEV_INDEX=$((DEV_INDEX + 1))
+        done
     fi
 
     # ========== API Keys (Optional) ==========
@@ -437,8 +449,15 @@ INSTALL_GEMINI=$INSTALL_GEMINI
 INSTALL_CODE_SERVER=$INSTALL_CODE_SERVER
 CODE_SERVER_PORT=$CODE_SERVER_PORT
 INSTALL_CURSOR=$INSTALL_CURSOR
+INSTALL_PODMAN=$INSTALL_PODMAN
+INSTALL_CSP_CLIS=$INSTALL_CSP_CLIS
+INSTALL_OCI_CLI=$INSTALL_OCI_CLI
+INSTALL_AWS_CLI=$INSTALL_AWS_CLI
+INSTALL_GCP_CLI=$INSTALL_GCP_CLI
+INSTALL_AZURE_CLI=$INSTALL_AZURE_CLI
 INSTALL_MULTILLM_GATEWAY=${INSTALL_MULTILLM_GATEWAY:-true}
 MULTILLM_GATEWAY_PORT=${MULTILLM_GATEWAY_PORT:-8080}
+MULTILLM_SOURCE_PATH="$MULTILLM_SOURCE_PATH"
 NODE_VERSION="$NODE_VERSION"
 PYTHON_VERSION="$PYTHON_VERSION"
 
@@ -455,21 +474,14 @@ GITHUB_TOKEN="$GITHUB_TOKEN"
 
 # ================== MULTIPLE DEVELOPER CONFIGURATION ==================
 MULTI_DEV_ENABLED=$MULTI_DEV_ENABLED
-DEV_2_NAME="$DEV_2_NAME"
-DEV_2_SSH_KEY_PATH="$DEV_2_SSH_KEY_PATH"
-DEV_2_WG_IP="$DEV_2_WG_IP"
-DEV_2_CODE_SERVER_PORT=$DEV_2_CODE_SERVER_PORT
-DEV_3_NAME="$DEV_3_NAME"
-DEV_3_SSH_KEY_PATH="$DEV_3_SSH_KEY_PATH"
-DEV_3_WG_IP="$DEV_3_WG_IP"
-DEV_3_CODE_SERVER_PORT=$DEV_3_CODE_SERVER_PORT
+$ADDITIONAL_DEV_ENV
 EOF
 
     chmod 600 "$ENV_FILE"
 
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║           Configuration saved to .env.local                      ║${NC}"
+    echo -e "${GREEN}║           Configuration saved to .env                            ║${NC}"
     echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${GREEN}║${NC} Cloud Target: ${CYAN}$CLOUD_PROVIDER${NC}"
     echo -e "${GREEN}║${NC} Instance:     ${CYAN}$VM_NAME${NC}"

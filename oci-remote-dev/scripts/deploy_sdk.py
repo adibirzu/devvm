@@ -17,6 +17,7 @@ import base64
 import datetime as dt
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -556,7 +557,7 @@ class SDKDeployer:
         self.args = args
         self.script_dir = Path(__file__).resolve().parent
         self.project_dir = self.script_dir.parent
-        self.env_file = Path(args.env_file).expanduser()
+        self.env_file = self._resolve_env_file(args.env_file)
         self.env = parse_env_file(self.env_file)
         self.runtime = self._build_runtime_config()
 
@@ -584,14 +585,37 @@ class SDKDeployer:
         self.existing_instance_id = ""
         self.existing_instance_state = ""
 
+    def _resolve_env_file(self, raw_path: str) -> Path:
+        requested = Path(raw_path).expanduser()
+        if not requested.is_absolute():
+            requested = self.project_dir / requested
+        if requested.exists() or Path(raw_path).name != ".env":
+            return requested
+        legacy = self.project_dir / ".env.local"
+        if legacy.exists():
+            warn("Using legacy .env.local. Prefer copying .env.example to .env for new deployments.")
+            return legacy
+        return requested
+
     def _get_env(self, key: str, default: str = "") -> str:
         v = self.env.get(key, default)
         return v if v != "" else default
 
+    def _validate_developer(self, dev: Dict[str, Any]) -> Dict[str, Any]:
+        name = str(dev["name"])
+        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", name):
+            fail(
+                f"Invalid developer username '{name}'. Use a Linux-safe name: "
+                "lowercase letter/underscore first, then lowercase letters, digits, underscores, or hyphens."
+            )
+        if not str(dev.get("ssh_key", "")).startswith(("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-")):
+            fail(f"Developer '{name}' has no valid SSH public key configured.")
+        return dev
+
     def _build_runtime_config(self) -> RuntimeConfig:
         profile = self.args.profile or self._get_env("OCI_PROFILE", "DEFAULT")
         tenancy = self._get_env("OCI_TENANCY_OCID")
-        compartment_name = self._get_env("OCI_COMPARTMENT_NAME", "Adrian_Birzu")
+        compartment_name = self._get_env("OCI_COMPARTMENT_NAME", "")
         compartment_ocid = self._get_env("OCI_COMPARTMENT_OCID")
         region = self.args.region or self._get_env("OCI_REGION", "")
         if not region:
@@ -615,47 +639,37 @@ class SDKDeployer:
         dev1_wg_ip = self._get_env("WG_CLIENT_IP", "10.200.200.2")
         dev1_port = int(self._get_env("CODE_SERVER_PORT", "8443"))
         
-        developers.append({
+        developers.append(self._validate_developer({
             "name": dev1_name,
             "ssh_key": dev1_ssh,
             "wg_ip": dev1_wg_ip,
             "code_server_port": dev1_port,
             "private_key": "",
             "public_key": ""
-        })
+        }))
         
         if multi_dev_enabled:
-            # Developer 2
-            dev2_name = self._get_env("DEV_2_NAME", "alice")
-            dev2_ssh_path = self._get_env("DEV_2_SSH_KEY_PATH", "")
-            if dev2_ssh_path:
-                dev2_ssh = resolve_ssh_key(dev2_ssh_path)
-                dev2_wg_ip = self._get_env("DEV_2_WG_IP", "10.200.200.3")
-                dev2_port = int(self._get_env("DEV_2_CODE_SERVER_PORT", "8444"))
-                developers.append({
-                    "name": dev2_name,
-                    "ssh_key": dev2_ssh,
-                    "wg_ip": dev2_wg_ip,
-                    "code_server_port": dev2_port,
-                    "private_key": "",
-                    "public_key": ""
-                })
-            
-            # Developer 3
-            dev3_name = self._get_env("DEV_3_NAME", "bob")
-            dev3_ssh_path = self._get_env("DEV_3_SSH_KEY_PATH", "")
-            if dev3_ssh_path:
-                dev3_ssh = resolve_ssh_key(dev3_ssh_path)
-                dev3_wg_ip = self._get_env("DEV_3_WG_IP", "10.200.200.4")
-                dev3_port = int(self._get_env("DEV_3_CODE_SERVER_PORT", "8445"))
-                developers.append({
-                    "name": dev3_name,
-                    "ssh_key": dev3_ssh,
-                    "wg_ip": dev3_wg_ip,
-                    "code_server_port": dev3_port,
-                    "private_key": "",
-                    "public_key": ""
-                })
+            idx = 2
+            while True:
+                dev_name = self._get_env(f"DEV_{idx}_NAME")
+                if not dev_name:
+                    has_more = any(self._get_env(f"DEV_{check_idx}_NAME") for check_idx in range(idx + 1, idx + 3))
+                    if not has_more:
+                        break
+                    idx += 1
+                    continue
+
+                dev_ssh_path = self._get_env(f"DEV_{idx}_SSH_KEY_PATH", "")
+                if dev_ssh_path:
+                    developers.append(self._validate_developer({
+                        "name": dev_name,
+                        "ssh_key": resolve_ssh_key(dev_ssh_path),
+                        "wg_ip": self._get_env(f"DEV_{idx}_WG_IP", f"10.200.200.{idx + 1}"),
+                        "code_server_port": int(self._get_env(f"DEV_{idx}_CODE_SERVER_PORT", str(8443 + idx - 1))),
+                        "private_key": "",
+                        "public_key": ""
+                    }))
+                idx += 1
 
         return RuntimeConfig(
             project_dir=self.project_dir,
@@ -1345,7 +1359,7 @@ class SDKDeployer:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Deploy OCI remote dev VM via Python SDK")
-    p.add_argument("--env-file", default=".env.local", help="Path to env file")
+    p.add_argument("--env-file", default=".env", help="Path to env file")
     p.add_argument("--config-file", default="~/.oci/config", help="Path to OCI config")
     p.add_argument("--profile", default="", help="OCI profile override")
     p.add_argument("--region", default="", help="OCI region override")
