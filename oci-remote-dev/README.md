@@ -185,6 +185,36 @@ MULTILLM_INSTALL_SOURCE=/opt/multillm    # pip target: synced source (default), 
 
 ---
 
+## 🧠 Shared Context Bus
+
+Agents and developers share durable memory through the gateway's memory/context
+store. AI agents reach it via the MCP tools registered in each user's
+`~/.claude/.mcp.json` (`llm_memory_store`, `llm_memory_search`, `llm_share_context`,
+…); humans reach the same store from the shell via the `context` CLI
+(`/usr/local/bin/context`).
+
+**Scope: private by default, shared on purpose.**
+
+```bash
+context put "Routing decision" "split tunnel, no DNS"   # → your private namespace (user-<you>)
+context search "routing"                                # search your namespace
+context put "API base URL" "10.200.200.1:8080" --shared # → cross-developer 'shared' namespace
+context search "routing" --shared                       # search shared
+context search "routing" --all                          # search across everything
+context list --shared
+context rm <id>
+```
+
+- **Default scope** is `user-<whoami>` — your memories stay yours.
+- **`--shared`** writes/reads the team `shared` namespace.
+- Reads are public over the VPN; writes send `X-API-Key` (from `/etc/multillm/collector.env`).
+
+> Scoping is a **convention enforced by the client** today — all rows share one
+> store. Hard per-tenant enforcement in the gateway is a Phase 2 follow-up
+> (see `ROADMAP-v2.md`).
+
+---
+
 ## 🌐 WireGuard VPN & Mac Routing
 
 By design, this is a **split tunnel**: only the `10.200.200.0/24` VPN subnet is routed through WireGuard. Your Mac keeps its normal internet path and its normal DNS.
@@ -277,7 +307,8 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | Dynamic per-developer landing dashboard cards | ✅ Implemented |
 | Security gate scanner + tests | ✅ Implemented |
 | Budget-breach warning UX + structured log sink | 🔭 Roadmap (Phase 1 tail) |
-| Cross-developer shared agent memory / context bus | 🔭 Roadmap (see `ROADMAP-v2.md`) |
+| Shared context bus — MCP tools + `context` CLI (scope by convention) | ✅ Implemented |
+| Hard per-tenant memory enforcement in the gateway | 🔭 Roadmap (Phase 2, multillm-side) |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
 
