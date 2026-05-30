@@ -5,9 +5,12 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from scripts.usage_report import (
+    evaluate_budgets,
     format_model_table,
     format_project_table,
     format_user_table,
+    parse_budgets,
+    render_budget_report,
     render_report,
     render_team_report,
     summarize_totals,
@@ -123,6 +126,43 @@ class TestTeamUsageReport(unittest.TestCase):
         out = render_team_report({}, hours=24)
         self.assertIn("no developer usage", out)
         self.assertIn("cost=$0.0000", out)
+
+
+class TestBudgets(unittest.TestCase):
+    def test_parse_budgets_basic(self) -> None:
+        self.assertEqual(parse_budgets("adi=5,royce=10"), {"adi": 5.0, "royce": 10.0})
+
+    def test_parse_budgets_tolerant(self) -> None:
+        # whitespace, blanks, and malformed pairs are skipped, not fatal
+        self.assertEqual(parse_budgets(" adi = 5 , ,bad,royce=x,carlos=2.5"),
+                         {"adi": 5.0, "carlos": 2.5})
+
+    def test_parse_budgets_empty(self) -> None:
+        self.assertEqual(parse_budgets(""), {})
+
+    def test_evaluate_flags_over_and_under(self) -> None:
+        rows = evaluate_budgets(TEAM_SAMPLE["by_user"], {"adi": 1.0, "royce": 1.0})
+        by_user = {r["user"]: r for r in rows}
+        self.assertTrue(by_user["adi"]["over"])      # spend 1.10 > cap 1.00
+        self.assertFalse(by_user["royce"]["over"])   # spend 0.13 < cap 1.00
+
+    def test_evaluate_includes_zero_usage_developer(self) -> None:
+        rows = evaluate_budgets(TEAM_SAMPLE["by_user"], {"newdev": 5.0})
+        self.assertEqual(rows[0]["spend"], 0.0)
+        self.assertFalse(rows[0]["over"])
+
+    def test_render_budget_report_breach_banner(self) -> None:
+        out = render_budget_report(TEAM_SAMPLE["by_user"], {"adi": 1.0}, hours=24)
+        self.assertIn("OVER", out)
+        self.assertIn("over budget: adi", out)
+
+    def test_render_budget_report_all_ok(self) -> None:
+        out = render_budget_report(TEAM_SAMPLE["by_user"], {"adi": 99.0}, hours=24)
+        self.assertIn("within budget", out)
+
+    def test_render_budget_report_no_budgets(self) -> None:
+        out = render_budget_report(TEAM_SAMPLE["by_user"], {}, hours=24)
+        self.assertIn("no budgets configured", out)
 
 
 if __name__ == "__main__":

@@ -202,6 +202,56 @@
         group: developers
         mode: '0755'
 
+    # Daily budget-breach check. usage-report exits 2 on any breach, which marks
+    # the oneshot unit failed — visible in `systemctl status multillm-budget-check`
+    # and journald. Only meaningful when per-user caps are configured.
+    - name: MultiLLM | Budget-breach check unit (daily)
+      when: (multillm_user_budgets | default('')) | length > 0
+      block:
+        - name: MultiLLM | Budget-check oneshot service
+          ansible.builtin.copy:
+            dest: /etc/systemd/system/multillm-budget-check.service
+            owner: root
+            group: root
+            mode: '0644'
+            content: |
+              [Unit]
+              Description=MultiLLM daily per-developer budget-breach check
+              After=multillm-gateway.service
+
+              [Service]
+              Type=oneshot
+              EnvironmentFile=/etc/multillm/collector.env
+              ExecStart=/usr/local/bin/usage-report --budgets --hours 24 \
+                --budget-spec "{{ multillm_user_budgets }}"
+
+        - name: MultiLLM | Budget-check timer (daily)
+          ansible.builtin.copy:
+            dest: /etc/systemd/system/multillm-budget-check.timer
+            owner: root
+            group: root
+            mode: '0644'
+            content: |
+              [Unit]
+              Description=Run the MultiLLM budget-breach check once a day
+
+              [Timer]
+              OnCalendar=daily
+              Persistent=true
+
+              [Install]
+              WantedBy=timers.target
+
+        - name: MultiLLM | Reload systemd for budget-check units
+          ansible.builtin.systemd:
+            daemon_reload: true
+
+        - name: MultiLLM | Enable + start the budget-check timer
+          ansible.builtin.systemd:
+            name: multillm-budget-check.timer
+            enabled: true
+            state: started
+
     # UFW exposure for the gateway port (restricted to the WG subnet) is owned
     # by the main playbook's firewall block so there is a single source of truth.
 

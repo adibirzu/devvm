@@ -43,9 +43,14 @@ Goal: a fleet-wide view of who/what is spending tokens and where time goes.
 - ✅ **Per-user daily budgets** — `MULTILLM_USER_BUDGETS="user=usd,…"` plumbed into
   the gateway env.
 
+- ✅ **Budget-breach surfacing (ops)** — `usage-report --budgets` joins caps against
+  spend and exits 2 on breach; a daily `multillm-budget-check.timer` runs it and
+  fails its unit on breach (visible in journald / `systemctl status`).
+
 **Remaining:**
-- **Budget enforcement UX** — surface a soft warning banner on `/team` (and optionally
-  on the landing dashboard) when a developer crosses their daily cap.
+- **Budget warning banner (UI)** — surface the breach on `/team` and the `:80` landing
+  page, not just journald. (Needs a small cross-origin allow for the `:80` → `:8080`
+  fetch, or a server-side status file written by the budget-check timer.)
 - **Structured agent log sink** — ship gateway + session logs (already `LOG_FORMAT=json`)
   to a queryable local sink and link it from the dashboard.
 - **`gateway-health` panel** — fold the `/health` probe into the `:80` landing page.
