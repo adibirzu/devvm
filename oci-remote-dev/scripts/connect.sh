@@ -99,6 +99,25 @@ if [[ ! -f "$QR_FILE" ]]; then
     QR_FILE="$PROJECT_DIR/configs/wireguard/client-qr.txt"
 fi
 
+# Run wg-quick robustly on macOS. Two gotchas this works around:
+#   1. wg-quick needs bash 4+, but macOS ships bash 3.2 as /bin/bash, and under
+#      `sudo` the secure PATH only exposes that old bash → version-mismatch error.
+#   2. wg-quick calls `wg` / `bash`, which live in the Homebrew prefix that sudo's
+#      secure PATH drops.
+# Injecting the wg-quick directory (Homebrew prefix) into PATH for the sudo call
+# fixes both: the modern bash and `wg` are found.
+run_wg_quick() {
+    local action="$1" conf="$2"
+    local wgq wgq_dir
+    wgq="$(command -v wg-quick 2>/dev/null)"
+    if [[ -z "$wgq" ]]; then
+        echo -e "${YELLOW}wg-quick not found. Install with: brew install wireguard-tools${NC}"
+        return 1
+    fi
+    wgq_dir="$(dirname "$wgq")"
+    sudo env PATH="$wgq_dir:/usr/bin:/bin:/usr/sbin:/sbin" wg-quick "$action" "$conf"
+}
+
 case "${COMMAND:-help}" in
     ssh)
         echo -e "${CYAN}Connecting as developer '${DEVELOPER}' via SSH...${NC}"
@@ -131,30 +150,31 @@ case "${COMMAND:-help}" in
             echo -e "${YELLOW}WireGuard config not found for developer '${DEVELOPER}' at $WG_CONF. Run deployment first.${NC}"
             exit 1
         fi
+        # We bring the tunnel up with wg-quick (reads the .conf directly) rather
+        # than the WireGuard macOS app. The app stores a COPY of the config at
+        # import time inside its NetworkExtension, so editing the .conf later does
+        # NOT update what the app pushes — a stale `DNS =` line in that cached copy
+        # is what breaks DNS/internet on a split tunnel. wg-quick always uses the
+        # current file. Set WG_USE_APP=1 to force the app instead.
         echo -e "${CYAN}Bringing up WireGuard with config: $WG_CONF...${NC}"
-        if [[ "$(uname)" == "Darwin" ]]; then
-            # macOS with WireGuard app
-            if [[ -d "/Applications/WireGuard.app" ]]; then
-                echo "Import the config into WireGuard app:"
-                echo "  $WG_CONF"
-                open /Applications/WireGuard.app
-            else
-                # Using wg-quick
-                sudo wg-quick up "$WG_CONF"
-            fi
+        if [[ "$(uname)" == "Darwin" && "${WG_USE_APP:-0}" == "1" ]]; then
+            echo -e "${YELLOW}Using WireGuard.app. IMPORTANT: delete any existing '$(basename "${WG_CONF%.conf}")' tunnel and RE-IMPORT this file,${NC}"
+            echo -e "${YELLOW}otherwise the app keeps a stale cached config (incl. an old DNS line).${NC}"
+            echo "  $WG_CONF"
+            open /Applications/WireGuard.app
         else
-            # Linux
-            sudo wg-quick up "$WG_CONF"
+            run_wg_quick up "$WG_CONF" && \
+                echo -e "${GREEN}Tunnel up via wg-quick (current file, no app cache).${NC}"
         fi
         ;;
 
     wg-down)
         echo -e "${CYAN}Bringing down WireGuard for developer '${DEVELOPER}'...${NC}"
-        if [[ "$(uname)" == "Darwin" ]]; then
+        if [[ "$(uname)" == "Darwin" && "${WG_USE_APP:-0}" == "1" ]]; then
             echo "Disconnect via WireGuard app"
             open /Applications/WireGuard.app
         else
-            sudo wg-quick down "$WG_CONF" 2>/dev/null || echo "Not connected"
+            run_wg_quick down "$WG_CONF" 2>/dev/null || echo "Not connected"
         fi
         ;;
 
