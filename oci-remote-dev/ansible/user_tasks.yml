@@ -1,0 +1,75 @@
+---
+- name: Create bin, applications, and local directories
+  ansible.builtin.file:
+    path: "/home/{{ dev.name }}/{{ item }}"
+    state: directory
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0755'
+  loop:
+    - bin
+    - .local
+    - .local/bin
+    - Applications
+    - .config
+    - .config/code-server
+
+- name: Check if Cursor binary exists
+  ansible.builtin.stat:
+    path: /opt/cursor/cursor.AppImage
+  register: cursor_bin
+
+- name: Symlink Cursor for developer
+  ansible.builtin.file:
+    src: /opt/cursor/cursor.AppImage
+    dest: "/home/{{ dev.name }}/Applications/cursor.AppImage"
+    state: link
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+  when: install_cursor and (cursor_bin.stat.exists | default(false))
+
+- name: Check if code-server already installed
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.local/bin/code-server"
+  register: code_server_bin
+  when: install_code_server
+
+- name: Install code-server via script
+  ansible.builtin.shell: |
+    curl -fsSL https://code-server.dev/install.sh | sh -s -- --method=standalone --prefix=/home/{{ dev.name }}/.local
+  args:
+    creates: "/home/{{ dev.name }}/.local/bin/code-server"
+  become_user: "{{ dev.name }}"
+  when: install_code_server and not (code_server_bin.stat.exists | default(false))
+
+- name: Configure code-server port
+  ansible.builtin.copy:
+    dest: "/home/{{ dev.name }}/.config/code-server/config.yaml"
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0644'
+    content: |
+      bind-addr: 0.0.0.0:{{ dev.code_server_port }}
+      auth: none
+      cert: false
+  when: install_code_server
+
+- name: Configure git settings for user
+  ansible.builtin.git_config:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    scope: global
+  become_user: "{{ dev.name }}"
+  loop:
+    - { name: "init.defaultBranch", value: "main" }
+    - { name: "core.editor", value: "vim" }
+    - { name: "pull.rebase", value: "false" }
+
+- name: Install MultiLLM gateway for developer
+  ansible.builtin.shell: |
+    export PIP_BREAK_SYSTEM_PACKAGES=1
+    bash /opt/multillm/install.sh
+  args:
+    creates: "/home/{{ dev.name }}/.local/bin/claude-multillm"
+  become_user: "{{ dev.name }}"
+  ignore_errors: true

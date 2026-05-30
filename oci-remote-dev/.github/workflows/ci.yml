@@ -1,0 +1,45 @@
+name: Code Quality CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint-python:
+    name: Python Linting & Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-level: '3.12'
+
+      - name: Install Linting Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff black oci
+
+      - name: Check Formatting (Black)
+        run: black --check scripts/*.py
+
+      - name: Lint Code (Ruff)
+        run: ruff check scripts/*.py
+
+  lint-shell:
+    name: Shell Scripts Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Validate Shell Scripts
+        run: |
+          shellcheck -e SC2002 scripts/*.sh

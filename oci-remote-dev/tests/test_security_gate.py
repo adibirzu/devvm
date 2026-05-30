@@ -1,0 +1,70 @@
+import unittest
+from pathlib import Path
+import re
+import sys
+
+# Ensure scripts directory is in path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from scripts.security_gate import scan_text, is_ignored, PATTERNS
+
+
+class TestSecurityGate(unittest.TestCase):
+    def test_ocid_detection(self) -> None:
+        """Verify that various OCI OCIDs are caught by the scanner."""
+        violations = scan_text(
+            "tenancy_ocid = \"ocid1.tenancy.oc1..aaaaaaaaxzpxbcag7zgamh2erlggqro3y63tvm2rbkkjz4zskvagupiz7a\"",
+            "test_file"
+        )
+        self.assertTrue(len(violations) > 0)
+        self.assertIn("Restricted OCI Resource OCID", violations[0][1])
+
+        violations_comp = scan_text(
+            "compartment_id = \"ocid1.compartment.oc1..aaaaaaaagy3yddkkampnhj3cqm5ar7w2p7tuq5twbojyycvol6wugfav3ckq\"",
+            "test_file"
+        )
+        self.assertTrue(len(violations_comp) > 0)
+
+    def test_restricted_ip_detection(self) -> None:
+        """Verify that public OCI restricted IPs are flagged."""
+        violations = scan_text(
+            "endpoint = \"130.61.78.98:51820\"",
+            "test_file"
+        )
+        self.assertTrue(len(violations) > 0)
+        self.assertIn("Restricted Infrastructure Public IP range", violations[0][1])
+
+    def test_tenancy_namespace_detection(self) -> None:
+        """Verify that restricted tenancy namespaces are caught."""
+        violations = scan_text(
+            "namespace = \"fr4zqfimuxtr\"",
+            "test_file"
+        )
+        self.assertTrue(len(violations) > 0)
+        self.assertIn("Restricted Tenancy Namespace", violations[0][1])
+
+    def test_private_key_detection(self) -> None:
+        """Verify that raw private keys trigger the scanner."""
+        private_key_block = (
+            "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+            "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtcn\n"
+            "-----END OPENSSH PRIVATE KEY-----"
+        )
+        violations = scan_text(private_key_block, "test_file")
+        self.assertTrue(len(violations) > 0)
+        self.assertIn("Private Key Block", violations[0][1])
+
+    def test_ignore_rules(self) -> None:
+        """Verify that allowed file paths are correctly ignored."""
+        self.assertTrue(is_ignored("configs/wireguard/client.conf"))
+        self.assertTrue(is_ignored(".env.local"))
+        self.assertTrue(is_ignored("README.md"))
+        self.assertTrue(is_ignored("scripts/security_gate.py"))
+        
+        # Staged checks on allowed names
+        self.assertFalse(is_ignored("scripts/deploy_multicloud.py"))
+        self.assertFalse(is_ignored("templates/cloud-init.yaml.tpl"))
+
+
+if __name__ == "__main__":
+    unittest.main()
