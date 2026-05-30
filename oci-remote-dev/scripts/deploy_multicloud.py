@@ -23,6 +23,8 @@ from typing import Any, Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts.wg_config import render_wg_client_config
+
 # Colors for terminal output
 GREEN = "\033[0;32m"
 YELLOW = "\033[1;33m"
@@ -64,39 +66,6 @@ def run_cmd(args: List[str], check: bool = True, capture: bool = True) -> str:
 def run_cmd_no_raise(args: List[str]) -> Tuple[int, str, str]:
     proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return proc.returncode, (proc.stdout or ""), (proc.stderr or "")
-
-
-def render_wg_client_config(
-    *,
-    private_key: str,
-    address: str,
-    server_public_key: str,
-    endpoint: str,
-    wg_network: str,
-    full_tunnel: bool = False,
-    dns: str = "",
-) -> str:
-    """Render a WireGuard client config.
-
-    Split tunnel is the default: only ``wg_network`` is routed through the tunnel
-    and no DNS line is emitted, because a DNS entry in a split-tunnel config
-    hijacks macOS system resolvers and breaks name resolution once the tunnel is
-    up. Pass ``full_tunnel=True`` to route all traffic (0.0.0.0/0, ::/0); a DNS
-    line is only emitted when ``dns`` is a non-empty string.
-    """
-    allowed_ips = "0.0.0.0/0, ::/0" if full_tunnel else wg_network
-    dns_line = f"DNS = {dns.strip()}\n" if dns.strip() else ""
-    return (
-        "[Interface]\n"
-        f"PrivateKey = {private_key}\n"
-        f"Address = {address}/24\n"
-        f"{dns_line}\n"
-        "[Peer]\n"
-        f"PublicKey = {server_public_key}\n"
-        f"Endpoint = {endpoint}\n"
-        f"AllowedIPs = {allowed_ips}\n"
-        "PersistentKeepalive = 25\n"
-    )
 
 
 class MultiCloudDeployer:
@@ -1003,6 +972,9 @@ class MultiCloudDeployer:
             "install_code_server": self._env_bool("INSTALL_CODE_SERVER", True),
             "install_multillm_gateway": self._env_bool("INSTALL_MULTILLM_GATEWAY", True),
             "multillm_gateway_port": int(self._get_env("MULTILLM_GATEWAY_PORT", "8080")),
+            "multillm_collect_interval_min": int(self._get_env("MULTILLM_COLLECT_INTERVAL_MIN", "15")),
+            "multillm_user_budgets": self._get_env("MULTILLM_USER_BUDGETS", ""),
+            "multillm_install_source": self._get_env("MULTILLM_INSTALL_SOURCE", "/opt/multillm"),
         }
 
         extra_vars_file = configs_dir / "ansible_vars.json"

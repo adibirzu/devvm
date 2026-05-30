@@ -140,7 +140,7 @@ class TestWireGuardClientConfig(unittest.TestCase):
     """Regression fence for the macOS split-tunnel/DNS routing fix."""
 
     def _render(self, **overrides):
-        from scripts.deploy_multicloud import render_wg_client_config
+        from scripts.wg_config import render_wg_client_config
         base = dict(
             private_key="PRIV",
             address="10.200.200.3",
