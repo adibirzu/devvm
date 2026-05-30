@@ -1,0 +1,74 @@
+---
+# Resilience layer — keep coding agents working through WireGuard / SSH / internet
+# drops, and let developers reattach on reconnect.
+#
+# Mechanisms:
+#   * agentctl runs agents in detached tmux on the VM (decoupled from the client);
+#   * `loginctl enable-linger <user>` keeps user processes alive after logout;
+#   * mosh gives a client link that survives IP changes, sleep, and roaming;
+#   * sshd + tmux are tuned for long-lived, reattachable sessions.
+
+- name: Resilience | Install tmux + mosh
+  ansible.builtin.apt:
+    name:
+      - tmux
+      - mosh
+    state: present
+
+- name: Resilience | Install agentctl (durable agent sessions)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/agentctl.sh"
+    dest: /usr/local/bin/agentctl
+    owner: root
+    group: developers
+    mode: '0755'
+
+- name: Resilience | Install palace (memory palace CLI)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/palace.sh"
+    dest: /usr/local/bin/palace
+    owner: root
+    group: developers
+    mode: '0755'
+
+- name: Resilience | Keep user processes alive after logout (linger)
+  ansible.builtin.command:
+    cmd: "loginctl enable-linger {{ item.name }}"
+    creates: "/var/lib/systemd/linger/{{ item.name }}"
+  loop: "{{ developers }}"
+
+- name: Resilience | Sensible tmux defaults for long-lived agent sessions
+  ansible.builtin.copy:
+    dest: "/home/{{ item.name }}/.tmux.conf"
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: '0644'
+    content: |
+      # Resilience-friendly tmux defaults (managed by Ansible)
+      set -g history-limit 50000
+      set -g mouse on
+      setw -g aggressive-resize on
+      set -g status-right "#[fg=cyan]#S #[fg=white]| %Y-%m-%d %H:%M"
+      # Survive client churn cleanly; don't destroy detached sessions.
+      set -g destroy-unattached off
+  loop: "{{ developers }}"
+
+- name: Resilience | sshd keepalive + tolerate brief link loss
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-resilience.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # Detect dead peers but tolerate transient WireGuard/internet blips.
+      ClientAliveInterval 30
+      ClientAliveCountMax 20
+      TCPKeepAlive yes
+  notify: Restart sshd
+
+- name: Resilience | Open mosh UDP range over the WireGuard subnet only
+  ansible.builtin.ufw:
+    rule: allow
+    from_ip: "{{ wg_network | default('10.200.200.0/24') }}"
+    port: "60000:61000"
+    proto: udp

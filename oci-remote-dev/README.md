@@ -215,6 +215,58 @@ context rm <id>
 
 ---
 
+## 🛟 Durable Agent Sessions & Disconnect Resilience
+
+Coding agents run **on the VM in detached tmux sessions**, decoupled from your
+client — so a WireGuard drop, an SSH timeout, or your laptop going to sleep does
+**not** stop them. Reconnect and reattach exactly where things were.
+
+```bash
+agentctl start claude -p myapp -d ~/shared-workspace/myapp   # launch a detached agent
+agentctl ls                       # see every session + state (running/attached/dead)
+agentctl ls --json                # machine-readable (feeds the status dashboard)
+agentctl attach 'agent:myapp:claude'   # reattach after a reconnect
+agentctl logs 'agent:myapp:claude'     # tail what it did while you were gone
+agentctl resume                   # live sessions + open threads from the memory palace
+agentctl stop 'agent:myapp:claude'
+```
+
+What keeps work alive across drops:
+
+- **Server-side tmux** — the agent process is independent of your SSH/WG link.
+- **`loginctl enable-linger`** — your processes survive after the login session ends.
+- **mosh** — a client link that survives IP changes, sleep, and roaming. From your Mac:
+  ```bash
+  mosh --ssh="ssh -i ~/.ssh/<key>" <you>@10.200.200.1 -- tmux -S ~/.agentctl/tmux.sock attach
+  ```
+- **sshd keepalive** tuned to tolerate brief WireGuard/internet blips (`sshd_config.d/10-resilience.conf`).
+
+> Toggle the whole layer with `install_resilience_layer` (default true). mosh uses
+> UDP `60000–61000`, opened only to the WireGuard subnet.
+
+---
+
+## 🏛️ Memory Palace
+
+A structured, durable **project memory** lives in [`.memory-palace/`](.memory-palace/)
+as markdown "rooms" (architecture, decisions, session log, open threads, glossary).
+Humans and agents read it to reload full context after a disconnect or a fresh
+session — the other half of resilience.
+
+```bash
+palace rooms                              # list rooms
+palace show decisions                     # read a room
+palace threads                            # what you were doing (read first on reconnect)
+palace note open-threads "did X, next Y"  # append a timestamped note
+palace note --share decisions "chose Z"   # also mirror to the shared context bus
+palace recall "wireguard"                 # search rooms + the bus
+```
+
+`agentctl resume` prints your live sessions **and** the open threads in one shot —
+the fastest way back into flow after the tunnel drops.
+
+---
+
 ## 🌐 WireGuard VPN & Mac Routing
 
 By design, this is a **split tunnel**: only the `10.200.200.0/24` VPN subnet is routed through WireGuard. Your Mac keeps its normal internet path and its normal DNS.
@@ -308,7 +360,11 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | Security gate scanner + tests | ✅ Implemented |
 | Budget-breach warning UX + structured log sink | 🔭 Roadmap (Phase 1 tail) |
 | Shared context bus — MCP tools + `context` CLI (scope by convention) | ✅ Implemented |
+| Durable agent sessions (`agentctl`) surviving WG/SSH/internet drops | ✅ Implemented |
+| Connection resilience — mosh, `loginctl` linger, sshd keepalive | ✅ Implemented |
+| Memory palace (`.memory-palace/` + `palace` CLI) | ✅ Implemented |
 | Hard per-tenant memory enforcement in the gateway | 🔭 Roadmap (Phase 2, multillm-side) |
+| Live multi-agent status board on the `:80` dashboard | 🔭 Roadmap (next) |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
 
