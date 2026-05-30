@@ -1,0 +1,216 @@
+---
+# MultiLLM team-usage monitoring
+# ------------------------------------------------------------------------------
+# Installs the MultiLLM gateway as a system service and a per-developer usage
+# collector. The collector runs *as each developer* on a timer, reads that
+# developer's local AI-CLI stats (~/.claude, ~/.codex, ~/.gemini) and pushes a
+# daily snapshot to the gateway. The gateway aggregates per-user / per-account
+# usage and serves a team dashboard at http://<wg_server_ip>:<port>/team.
+#
+# Reachable only over the WireGuard VPN (UFW restricts the port to the WG
+# subnet). No prompt content is ever collected — token counts and a best-effort
+# account label only.
+#
+# Tunable vars (override via deployer extra-vars / .env.local):
+#   install_multillm            : master toggle (default true)
+#   multillm_install_source     : pip target (PyPI spec, git URL, or local path)
+#   multillm_gateway_port       : gateway bind port (default 8080)
+#   multillm_collect_interval_min : collector cadence in minutes (default 15)
+#   multillm_user_budgets       : "user=usd,user=usd" daily cost caps (optional)
+#   wg_server_ip                : WireGuard server IP the gateway binds to
+#   wg_network                  : WG subnet allowed through UFW (e.g. 10.200.200.0/24)
+
+- name: MultiLLM | block
+  when: install_multillm_gateway | default(true) | bool
+  block:
+    - name: MultiLLM | Ensure system prerequisites
+      ansible.builtin.apt:
+        name:
+          - python3-venv
+          - python3-pip
+        state: present
+
+    - name: MultiLLM | Create dedicated service user
+      ansible.builtin.user:
+        name: multillm
+        system: true
+        shell: /usr/sbin/nologin
+        home: /opt/multillm
+        create_home: true
+
+    - name: MultiLLM | Ensure data + config directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: /opt/multillm,     owner: multillm, group: multillm,    mode: '0755' }
+        - { path: /var/lib/multillm, owner: multillm, group: multillm,    mode: '0750' }
+        - { path: /etc/multillm,     owner: root,     group: developers,  mode: '0750' }
+
+    - name: MultiLLM | Create virtualenv
+      ansible.builtin.command:
+        cmd: python3 -m venv /opt/multillm/venv
+        creates: /opt/multillm/venv/bin/python
+
+    - name: MultiLLM | Install / upgrade the gateway package
+      ansible.builtin.pip:
+        # Defaults to the source synced to /opt/multillm by the playbook's
+        # "Deploy MultiLLM gateway source" task. Override with a PyPI spec
+        # (e.g. "multillm==1.0.0rc1") or a git URL for a sourceless install.
+        name: "{{ multillm_install_source | default('/opt/multillm') }}"
+        virtualenv: /opt/multillm/venv
+        extra_args: "--upgrade"
+        state: present
+      register: multillm_pip
+      notify: Restart multillm-gateway
+
+    - name: MultiLLM | Generate API key on first run (persisted, not rotated)
+      ansible.builtin.shell:
+        cmd: "umask 027 && head -c 30 /dev/urandom | base64 | tr -d '/+=' | head -c 40 > /etc/multillm/api_key"
+        creates: /etc/multillm/api_key
+
+    - name: MultiLLM | Read API key
+      ansible.builtin.slurp:
+        src: /etc/multillm/api_key
+      register: multillm_api_key_b64
+
+    - name: MultiLLM | Set API key fact
+      ansible.builtin.set_fact:
+        multillm_api_key: "{{ multillm_api_key_b64.content | b64decode | trim }}"
+
+    - name: MultiLLM | Gateway environment file
+      ansible.builtin.copy:
+        dest: /etc/multillm/gateway.env
+        owner: root
+        group: multillm
+        mode: '0640'
+        content: |
+          GATEWAY_HOST={{ wg_server_ip | default('0.0.0.0') }}
+          GATEWAY_PORT={{ multillm_gateway_port | default(8080) }}
+          MULTILLM_DATA_DIR=/var/lib/multillm
+          MULTILLM_API_KEY={{ multillm_api_key }}
+          # Dashboards + read-only usage API reachable without a key over the VPN.
+          MULTILLM_PUBLIC_DASHBOARD_API=true
+          MULTILLM_USER_BUDGETS={{ multillm_user_budgets | default('') }}
+          LOG_FORMAT=json
+      notify: Restart multillm-gateway
+
+    - name: MultiLLM | Collector environment file (readable by developers)
+      ansible.builtin.copy:
+        dest: /etc/multillm/collector.env
+        owner: root
+        group: developers
+        mode: '0640'
+        content: |
+          MULTILLM_GATEWAY=http://{{ wg_server_ip | default('127.0.0.1') }}:{{ multillm_gateway_port | default(8080) }}
+          MULTILLM_API_KEY={{ multillm_api_key }}
+          MULTILLM_COLLECT_HOURS=168
+
+    - name: MultiLLM | Gateway systemd unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/multillm-gateway.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=MultiLLM Gateway (team usage monitoring)
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User=multillm
+          Group=multillm
+          EnvironmentFile=/etc/multillm/gateway.env
+          ExecStart=/opt/multillm/venv/bin/multillm-gateway
+          Restart=always
+          RestartSec=5
+          # Hardening
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          ReadWritePaths=/var/lib/multillm
+          PrivateTmp=true
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart multillm-gateway
+
+    - name: MultiLLM | Per-user collector unit template (oneshot)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/multillm-collector@.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=MultiLLM per-user usage collector for %i
+          After=multillm-gateway.service
+
+          [Service]
+          Type=oneshot
+          User=%i
+          EnvironmentFile=/etc/multillm/collector.env
+          # Reads ~%i local CLI stats and pushes a daily snapshot tagged tenant=%i.
+          ExecStart=/opt/multillm/venv/bin/multillm-collect --user %i
+
+    - name: MultiLLM | Per-user collector timer template
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/multillm-collector@.timer
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Run MultiLLM usage collector for %i every {{ multillm_collect_interval_min | default(15) }} min
+
+          [Timer]
+          OnBootSec=3min
+          OnUnitActiveSec={{ multillm_collect_interval_min | default(15) }}min
+          RandomizedDelaySec=60
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: MultiLLM | Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: MultiLLM | Enable and start the gateway
+      ansible.builtin.systemd:
+        name: multillm-gateway
+        enabled: true
+        state: started
+
+    - name: MultiLLM | Enable + start a collector timer per developer
+      ansible.builtin.systemd:
+        name: "multillm-collector@{{ item.name }}.timer"
+        enabled: true
+        state: started
+      loop: "{{ developers }}"
+
+    - name: MultiLLM | Install usage-report CLI (aggregate + per-developer rollup)
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/usage_report.py"
+        dest: /usr/local/bin/usage-report
+        owner: root
+        group: developers
+        mode: '0755'
+
+    # UFW exposure for the gateway port (restricted to the WG subnet) is owned
+    # by the main playbook's firewall block so there is a single source of truth.
+
+    - name: MultiLLM | Wait for the gateway to answer
+      ansible.builtin.uri:
+        url: "http://{{ wg_server_ip | default('127.0.0.1') }}:{{ multillm_gateway_port | default(8080) }}/health"
+        status_code: 200
+      register: multillm_health
+      retries: 10
+      delay: 3
+      until: multillm_health.status == 200
+      ignore_errors: true
