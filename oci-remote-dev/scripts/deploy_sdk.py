@@ -28,6 +28,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import oci
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from scripts.wg_config import render_wg_client_config
+
 
 HTML_DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -1160,27 +1164,20 @@ class SDKDeployer:
 
     def write_client_wireguard_config(self) -> None:
         keys_dir = self.project_dir / "configs" / "wireguard"
-        # Split-tunnel by default (only the VPN subnet is routed) with no DNS line,
-        # because a DNS entry in a split-tunnel config hijacks macOS system resolvers
-        # and breaks name resolution once the tunnel is up. Set WG_FULL_TUNNEL=true to
-        # route all client traffic through the VM, and WG_DNS to push a resolver.
+        # Shared renderer: split-tunnel + no DNS by default (see scripts/wg_config.py).
         full_tunnel = env_bool(self._get_env("WG_FULL_TUNNEL", "false"), False)
-        wg_dns = self._get_env("WG_DNS", "").strip()
+        wg_dns = self._get_env("WG_DNS", "")
         wg_network = self._get_env("WG_NETWORK", "10.200.200.0/24")
-        allowed_ips = "0.0.0.0/0, ::/0" if full_tunnel else wg_network
         for dev in self.runtime.developers:
             path = keys_dir / f"client_{dev['name']}.conf"
-            dns_line = f"DNS = {wg_dns}\n" if wg_dns else ""
-            cfg = (
-                "[Interface]\n"
-                f"PrivateKey = {dev['private_key']}\n"
-                f"Address = {dev['wg_ip']}/24\n"
-                f"{dns_line}\n"
-                "[Peer]\n"
-                f"PublicKey = {self.wg_server_public_key}\n"
-                f"Endpoint = {self.public_ip}:{self.runtime.wg_port}\n"
-                f"AllowedIPs = {allowed_ips}\n"
-                "PersistentKeepalive = 25\n"
+            cfg = render_wg_client_config(
+                private_key=dev["private_key"],
+                address=dev["wg_ip"],
+                server_public_key=self.wg_server_public_key,
+                endpoint=f"{self.public_ip}:{self.runtime.wg_port}",
+                wg_network=wg_network,
+                full_tunnel=full_tunnel,
+                dns=wg_dns,
             )
             path.write_text(cfg, encoding="utf-8")
             path.chmod(0o600)
