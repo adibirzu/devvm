@@ -58,15 +58,28 @@ cmd_start() {
     done
     [[ -d "$dir" ]] || die "directory not found: $dir"
 
-    # Default command per known agent; fall back to the agent name as a binary.
+    # Default command per known agent. For anything else, consult the pluggable
+    # runtime registry (pai-runtimes) so registered runtimes — antigravity/agy,
+    # hermes, nanoclaw, … — launch as durable sessions with their gateway env,
+    # all inheriting the same PreToolUse guardrail. Falls back to the bare name.
     if [[ ${#cmd[@]} -eq 0 ]]; then
         case "$agent" in
             claude)  cmd=(claude);;
             codex)   cmd=(codex);;
-            gemini)  cmd=(gemini);;
             aider)   cmd=(aider);;
             opencode) cmd=(opencode);;
-            *)       cmd=("$agent");;
+            *)
+                resolved=""
+                if command -v pai-runtimes >/dev/null 2>&1; then
+                    resolved="$(pai-runtimes resolve "$agent" --interactive 2>/dev/null)" || true
+                fi
+                if [[ -n "$resolved" ]]; then
+                    # shellcheck disable=SC2206
+                    cmd=($resolved)
+                else
+                    cmd=("$agent")
+                fi
+                ;;
         esac
     fi
 

@@ -34,10 +34,11 @@ RUNS_FEED = STATE_DIR / "jobs.jsonl"
 DEFAULT_TIMEOUT = int(os.environ.get("AGENT_JOB_TIMEOUT", "900"))
 
 # Non-interactive invocation per agent ("-p" = print/headless mode for Claude Code).
+# Built-in non-interactive invocations ("-p" = headless for Claude Code). Other
+# registered runtimes (antigravity/agy, hermes, nanoclaw) resolve via pai-runtimes.
 AGENT_CMD = {
     "claude": ["claude", "-p"],
     "codex":  ["codex", "exec"],
-    "gemini": ["gemini", "-p"],
 }
 
 
