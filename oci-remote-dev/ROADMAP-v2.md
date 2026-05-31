@@ -36,7 +36,12 @@ The substrate that makes everything else survivable, shipped first:
   back after a VM reboot (skips `--no-restart` sessions). More reliable for CLI agents
   than tmux-resurrect, which can't restore an agent's internal state anyway.
 
-**Next on this track:** a mobile-friendly view of the board.
+- ✅ **Mobile-friendly board** — responsive layout (wide session tables stack into
+  labelled rows on phones), pause/refresh controls, and polling that suspends while the
+  tab is backgrounded. Monitor agents from your phone over the WireGuard VPN.
+
+**Next on this track:** push notifications when an agent needs input (the AgentsRoom
+"notification ring" for Linux).
 
 ---
 
