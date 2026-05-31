@@ -70,3 +70,12 @@
   ansible.builtin.command:
     cmd: /usr/local/bin/mcp-registry validate --registry /opt/agent-os/registry.json
   changed_when: false
+
+# --- OCI read-only MCP server (Phase 3 Task 3) ---
+- name: Agent-OS | Install the OCI read-only MCP server
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/oci_mcp_server.py"
+    dest: /usr/local/lib/agent-os/oci_mcp_server.py
+    owner: root
+    group: developers
+    mode: '0755'
