@@ -45,11 +45,13 @@ _meta_get() { grep -m1 "^$2=" "$1" 2>/dev/null | cut -d= -f2-; }
 cmd_start() {
     local agent="" project="default" dir="$PWD" cmd=()
     agent="${1:-}"; shift || true
-    [[ -n "$agent" ]] || die "usage: agentctl start <agent> [-p project] [-d dir] [-- cmd...]"
+    [[ -n "$agent" ]] || die "usage: agentctl start <agent> [-p project] [-d dir] [--no-restart] [-- cmd...]"
+    local restartable="true"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -p|--project) project="$2"; shift 2;;
             -d|--dir) dir="$2"; shift 2;;
+            --no-restart) restartable="false"; shift;;
             --) shift; cmd=("$@"); break;;
             *) die "unknown arg: $1";;
         esac
@@ -85,6 +87,7 @@ cmd_start() {
         echo "dir=$dir"
         echo "cmd=${cmd[*]}"
         echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "restartable=$restartable"
     } > "$(_meta_file "$name")"
 
     echo -e "${GREEN}Started${NC} $name  (dir: $dir)"
@@ -181,6 +184,29 @@ cmd_resume() {
     fi
 }
 
+cmd_restore() {
+    # Recreate detached sessions from metadata — used by the boot service so agents
+    # come back after a VM reboot. Skips sessions that are already live or were
+    # started with --no-restart. The agent command is replayed in its project dir;
+    # internal agent state is not (the memory palace + agent session files carry that).
+    local restored=0 skipped=0
+    for f in "$STATE_DIR"/meta/*.env; do
+        [[ -e "$f" ]] || continue
+        local name dir cmd restartable sname
+        name="$(_meta_get "$f" name)"; dir="$(_meta_get "$f" dir)"
+        cmd="$(_meta_get "$f" cmd)"; restartable="$(_meta_get "$f" restartable)"
+        sname="$(_sanitize "$name")"
+        if "${TMUX[@]}" has-session -t "$sname" 2>/dev/null; then skipped=$((skipped+1)); continue; fi
+        if [[ "$restartable" == "false" ]]; then skipped=$((skipped+1)); continue; fi
+        [[ -d "$dir" ]] || { echo "skip $name: dir gone ($dir)"; skipped=$((skipped+1)); continue; }
+        # cmd was stored space-joined; replay via the login shell so PATH/agents resolve.
+        "${TMUX[@]}" new-session -d -s "$sname" -c "$dir" "${cmd:-bash}"
+        echo "restored $name (dir: $dir)"
+        restored=$((restored+1))
+    done
+    echo -e "${GREEN}restore complete:${NC} $restored started, $skipped skipped"
+}
+
 case "${1:-help}" in
     start)  shift; cmd_start "$@";;
     attach) shift; cmd_attach "$@";;
@@ -189,18 +215,21 @@ case "${1:-help}" in
     logs)   shift; cmd_logs "$@";;
     stop|kill) shift; cmd_stop "$@";;
     resume) shift; cmd_resume "$@";;
+    restore) shift; cmd_restore "$@";;
     *)
         cat <<EOF
 agentctl — durable multi-agent sessions (survive WireGuard/SSH/internet drops)
 
-  agentctl start <agent> [-p project] [-d dir] [-- cmd...]   launch a detached agent
+  agentctl start <agent> [-p project] [-d dir] [--no-restart] [-- cmd...]   launch a detached agent
   agentctl attach <name>                                     reattach after reconnect
   agentctl ls | status [--json]                              list sessions + state
   agentctl logs <name> [-n lines]                            tail a session's output
   agentctl stop <name>                                       end a session
   agentctl resume                                            sessions + open threads on reconnect
+  agentctl restore                                           recreate sessions from metadata (boot)
 
 Agents run server-side in tmux, so a dropped connection never kills them.
+Sessions also survive VM reboots: agentctl-restore.service replays metadata on boot.
 Pair with mosh for a client link that also survives roaming and sleep.
 EOF
         ;;

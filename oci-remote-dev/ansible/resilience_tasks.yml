@@ -37,6 +37,32 @@
     creates: "/var/lib/systemd/linger/{{ item.name }}"
   loop: "{{ developers }}"
 
+- name: Resilience | Restore agent sessions on boot (replays agentctl metadata)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/agentctl-restore.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Recreate durable agent sessions after a reboot
+      After=network-online.target multillm-gateway.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      # Replay each developer's agentctl sessions as that user (skips --no-restart).
+      ExecStart=/bin/bash -c 'for u in {{ developers | map(attribute="name") | join(" ") }}; do runuser -u "$u" -- /usr/local/bin/agentctl restore || true; done'
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Resilience | Enable the boot-time agent restore service
+  ansible.builtin.systemd:
+    name: agentctl-restore.service
+    enabled: true
+    daemon_reload: true
+
 - name: Resilience | Sensible tmux defaults for long-lived agent sessions
   ansible.builtin.copy:
     dest: "/home/{{ item.name }}/.tmux.conf"
