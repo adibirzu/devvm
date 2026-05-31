@@ -37,6 +37,16 @@
     .ctrl { background: var(--card); border: 1px solid var(--border); color: var(--text);
             border-radius: 8px; padding: .35rem .8rem; font: inherit; cursor: pointer; }
     .ctrl:active { transform: scale(.97); }
+    /* Notification ring — pulses on developers/sessions waiting for input. */
+    @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(224,161,58,.55); }
+                      70% { box-shadow: 0 0 0 12px rgba(224,161,58,0); }
+                      100% { box-shadow: 0 0 0 0 rgba(224,161,58,0); } }
+    .needs-input { animation: ring 1.6s infinite; border-color: var(--dead) !important; }
+    .bell { color: var(--dead); font-weight: 700; }
+    .notifs { display: flex; flex-direction: column; gap: .5rem; margin: 0 0 1.5rem; }
+    .notif { background: rgba(224,161,58,.08); border: 1px solid rgba(224,161,58,.3);
+             border-radius: 10px; padding: .6rem .9rem; font-size: .9rem; }
+    .notif .when { color: var(--muted); }
 
     /* Mobile: monitor from a phone over the VPN. Stack the wide session tables into
        labelled rows; keep the narrow project tables as-is. */
@@ -68,40 +78,66 @@
       <a href="/">← Dashboard</a>
     </header>
     <div class="totals" id="totals"></div>
+    <div class="notifs" id="notifs"></div>
     <div id="board"><p class="empty">Loading…</p></div>
     <h2 style="margin:2.5rem 0 1rem;">📁 Projects</h2>
     <div id="projects"><p class="empty">Loading…</p></div>
     <footer>
       <button class="ctrl" id="refresh">↻ Refresh</button>
       <button class="ctrl" id="pause">⏸ Pause</button>
+      <button class="ctrl" id="alerts">🔔 Enable alerts</button>
       <span id="foot"></span>
     </footer>
   </div>
   <script>
     const ST = { running: "running", attached: "attached", dead: "dead" };
+    let notifReady = false;   // becomes true after the first poll so we don't alert on history
     function fmtCost(c) { return "$" + (Number(c) || 0).toFixed(4); }
     function render(data) {
-      const t = data.totals || { sessions: 0, running: 0, cost_usd: 0 };
+      const t = data.totals || { sessions: 0, running: 0, cost_usd: 0, needs_input: 0 };
       document.getElementById("totals").innerHTML = `
+        <div class="stat ${t.needs_input ? "needs-input" : ""}"><div class="n">${t.needs_input || 0}</div><div class="l">🔔 need input</div></div>
         <div class="stat"><div class="n">${t.running}</div><div class="l">active sessions</div></div>
         <div class="stat"><div class="n">${t.sessions}</div><div class="l">total sessions</div></div>
-        <div class="stat"><div class="n">${fmtCost(t.cost_usd)}</div><div class="l">LLM cost · 24h</div></div>
-        <div class="stat"><div class="n">${(data.developers || []).length}</div><div class="l">developers</div></div>`;
+        <div class="stat"><div class="n">${fmtCost(t.cost_usd)}</div><div class="l">LLM cost · 24h</div></div>`;
+      renderNotifs(data);
       const board = document.getElementById("board");
       const devs = data.developers || [];
       if (!devs.length) { board.innerHTML = `<p class="empty">No developers found.</p>`; return; }
       board.innerHTML = devs.map(d => {
         const rows = (d.sessions || []).map(s => `
           <tr>
-            <td data-label="Agent">${s.agent}</td><td data-label="Project">${s.project}</td>
+            <td data-label="Agent">${s.needs_input ? '<span class="bell">🔔 </span>' : ""}${s.agent}</td><td data-label="Project">${s.project}</td>
             <td data-label="State"><span class="pill ${ST[s.state] || "dead"}">${s.state}</span></td>
             <td data-label="Dir">${s.dir || ""}</td><td data-label="Started">${s.started_at || ""}</td>
           </tr>`).join("");
         const body = rows || `<tr><td colspan="5" class="empty">no sessions</td></tr>`;
-        return `<div class="dev"><h2>${d.name}<span class="cost">${fmtCost(d.cost_usd_24h)} · 24h</span></h2>
+        const bell = d.needs_input ? '<span class="bell">🔔</span> ' : "";
+        return `<div class="dev ${d.needs_input ? "needs-input" : ""}"><h2>${bell}${d.name}<span class="cost">${fmtCost(d.cost_usd_24h)} · 24h</span></h2>
           <table class="sessions"><thead><tr><th>Agent</th><th>Project</th><th>State</th><th>Dir</th><th>Started</th></tr></thead>
           <tbody>${body}</tbody></table></div>`;
       }).join("");
+    }
+    // Collect notifications across developers, render a strip, and fire browser
+    // notifications for any we haven't shown yet (phone alerts over the VPN).
+    const seenNotifs = new Set();
+    function renderNotifs(data) {
+      const all = [];
+      for (const d of (data.developers || [])) for (const n of (d.notifications || [])) all.push({ ...n, dev: d.name });
+      all.sort((a, b) => (b.ts || "").localeCompare(a.ts || ""));
+      const box = document.getElementById("notifs");
+      box.innerHTML = all.slice(0, 6).map(n =>
+        `<div class="notif"><span class="bell">🔔</span> <strong>${n.dev}/${n.session || "?"}</strong> ${n.message || ""} <span class="when">· ${n.ts || ""}</span></div>`
+      ).join("");
+      for (const n of all) {
+        const key = (n.ts || "") + "|" + (n.session || "") + "|" + (n.message || "");
+        if (seenNotifs.has(key)) continue;
+        seenNotifs.add(key);
+        if (notifReady && "Notification" in window && Notification.permission === "granted") {
+          try { new Notification("🔔 " + (n.dev || "") + "/" + (n.session || ""), { body: n.message || "needs input", tag: key }); } catch (e) {}
+        }
+      }
+      if (seenNotifs.size > 500) seenNotifs.clear();  // bound memory
     }
     function gitBadge(g) {
       if (!g) return `<span class="pill dead">no git</span>`;
@@ -154,7 +190,17 @@
     });
     // Don't poll while the tab/app is backgrounded (mobile-friendly).
     document.addEventListener("visibilitychange", () => { if (document.hidden) { if (timer) clearInterval(timer); } else if (!paused) { tick(); loop(); } });
-    tick(); loop();
+    // Phone alerts: request Notification permission on user gesture (required by browsers).
+    document.getElementById("alerts").addEventListener("click", (e) => {
+      if (!("Notification" in window)) { e.target.textContent = "alerts unsupported"; return; }
+      Notification.requestPermission().then(p => {
+        e.target.textContent = p === "granted" ? "🔔 Alerts on" : "🔔 Alerts blocked";
+      });
+    });
+    if ("Notification" in window && Notification.permission === "granted")
+      document.getElementById("alerts").textContent = "🔔 Alerts on";
+    // First poll seeds the seen-set (no alert storm for existing notifications), then arm.
+    tick().then(() => { notifReady = true; }); loop();
   </script>
 </body>
 </html>

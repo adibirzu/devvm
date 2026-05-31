@@ -114,3 +114,29 @@
     creates: "/home/{{ dev.name }}/.local/bin/claude-multillm"
   become_user: "{{ dev.name }}"
   ignore_errors: true
+
+- name: Register Claude Notification hook (feeds the board's notification ring)
+  become_user: "{{ dev.name }}"
+  ansible.builtin.shell: |
+    set -e
+    HOOKS="$HOME/.claude/hooks.json"
+    mkdir -p "$HOME/.claude"
+    python3 - "$HOOKS" <<'PY'
+    import json, os, sys
+    path = sys.argv[1]
+    data = {}
+    if os.path.exists(path):
+        try:
+            data = json.load(open(path))
+        except Exception:
+            data = {}
+    arr = data.setdefault("Notification", [])
+    if not any("claude-notify-hook" in json.dumps(e) for e in arr):
+        arr.append({"hooks": [{"type": "command", "command": "/usr/local/bin/claude-notify-hook"}]})
+        json.dump(data, open(path, "w"), indent=2)
+        print("added")
+    else:
+        print("present")
+    PY
+  register: notify_hook
+  changed_when: "'added' in notify_hook.stdout"

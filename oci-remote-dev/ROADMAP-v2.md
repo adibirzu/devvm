@@ -40,8 +40,14 @@ The substrate that makes everything else survivable, shipped first:
   labelled rows on phones), pause/refresh controls, and polling that suspends while the
   tab is backgrounded. Monitor agents from your phone over the WireGuard VPN.
 
-**Next on this track:** push notifications when an agent needs input (the AgentsRoom
-"notification ring" for Linux).
+- ✅ **Notification ring** — Claude's Notification hook → `agent-notify` (tagged with
+  `$AGENTCTL_SESSION`) → a per-user JSONL feed the board reads. Sessions/developers
+  waiting for input get a pulsing ring + a `🔔` badge; the board fires a browser
+  notification (phone alert over the VPN) for each new event. Notifications expire by
+  time, so no write-back endpoint is needed.
+
+**Next on this track:** Phase 3 proper — central MCP tool registry + guardrail
+enforcement (multillm-side: hard tenant scope + deny/confirm on destructive tool calls).
 
 ---
 
