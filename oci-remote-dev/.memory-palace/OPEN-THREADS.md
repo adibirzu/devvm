@@ -3,6 +3,7 @@
 What's in flight. **Read this first on reconnect.** Move finished items to `SESSION-LOG.md`.
 
 ## Recently shipped
+- [x] Phase 4 read-only control-plane API (GET /fleet/status, /developers, /fleet/services).
 - [x] Phase 1 complete (gateway-health pill + budget banner on board). Phase 2 pairing
       integration: pair-claude note/summary/kill → shared context bus.
 - [x] Phase 3 (Agent-OS): tool guardrails (PreToolUse deny/ask policy + audit + board

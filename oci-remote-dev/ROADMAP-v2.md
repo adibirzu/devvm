@@ -162,14 +162,18 @@ sees them. The hook is the correct (and only) enforcement point, and it's per-us
 
 Goal: manage developers, services, and budgets without SSH.
 
-- **Control-plane REST API** (VPN-only) — `POST /developers`, `DELETE /developers/:n`,
-  `GET /fleet/status`, `POST /budgets`. Backed by the same Ansible primitives so the
-  API and `deploy.sh` converge on identical state.
-- **Self-service onboarding** — a developer can request an account; an admin approves;
-  the API runs the scoped Ansible play to materialize it.
-- **Fleet telemetry** — aggregate health (gateway up, code-servers up, disk, GPU if
-  present) surfaced on the landing dashboard.
-- **Toggle:** `ENABLE_CONTROL_PLANE=true`.
+**Delivered (read side):**
+- ✅ **Read-only control-plane API** (`control_plane.py` → `control-plane.service`,
+  VPN-only on `:8082`): `GET /healthz`, `/fleet/status` (delegates to `agent-status`),
+  `/developers`, `/fleet/services` (systemd state). Stdlib-only; pure `dispatch()`
+  router (any non-GET → 405), 7 tests. Verified live over HTTP.
+
+**Remaining (write side — deliberately separate, higher-risk):**
+- **Mutating endpoints** — `POST /developers`, `DELETE /developers/:n`, `POST /budgets`
+  that run the scoped Ansible play. Needs authN/authZ (admin token), an audit trail, and
+  a confirmation/approval step before it touches accounts — its own task, not bolted on.
+- **Self-service onboarding** — request → admin approve → materialize via Ansible.
+- **Toggle:** `install_agent_os` (the read API rides with it).
 
 ---
 

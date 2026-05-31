@@ -442,6 +442,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | Tool guardrails — PreToolUse deny/ask policy + audit + board panel | ✅ Implemented |
 | Central MCP tool registry → per-user `.mcp.json` (merge-safe) | ✅ Implemented |
 | OCI read-only MCP server (read-only verb allowlist) | ✅ Implemented |
+| Read-only fleet control-plane API (VPN-only, `:8082`) | ✅ Implemented |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
 
