@@ -168,12 +168,21 @@ Goal: manage developers, services, and budgets without SSH.
   `/developers`, `/fleet/services` (systemd state). Stdlib-only; pure `dispatch()`
   router (any non-GET → 405), 7 tests. Verified live over HTTP.
 
-**Remaining (write side — deliberately separate, higher-risk):**
-- **Mutating endpoints** — `POST /developers`, `DELETE /developers/:n`, `POST /budgets`
-  that run the scoped Ansible play. Needs authN/authZ (admin token), an audit trail, and
-  a confirmation/approval step before it touches accounts — its own task, not bolted on.
-- **Self-service onboarding** — request → admin approve → materialize via Ansible.
-- **Toggle:** `install_agent_os` (the read API rides with it).
+**Delivered (write side):**
+- ✅ **Mutating endpoints with admin-token auth + audit** — `POST /developers` and
+  `DELETE /developers/<name>` validate and **queue** the change to
+  `/etc/agent-os/pending-changes.jsonl` (an admin materializes it via `deploy.sh`);
+  account create/delete is never executed by the web service. `POST /budgets` applies
+  **live** (writes `/etc/agent-os/budgets`, which `agent-status` reads next poll). All
+  mutations require `X-Admin-Token` (generated to `/etc/agent-os/admin.token`, 0600) and
+  are written to a control-plane audit log. `GET /pending` shows the queue. 13 write/auth
+  tests; verified live over HTTP.
+
+**Remaining:**
+- **Apply-from-queue** — teach `deploy.sh` to consume `pending-changes.jsonl` (today an
+  admin edits `.env` and redeploys; the queue is the intent record).
+- **Self-service onboarding** — non-admin request → admin approve → materialize.
+- **Toggle:** `install_agent_os` (the API rides with it).
 
 ---
 

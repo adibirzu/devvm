@@ -80,7 +80,19 @@
     group: developers
     mode: '0755'
 
-# --- Read-only fleet control-plane API (Phase 4 Task 1) ---
+# --- Fleet control-plane API (Phase 4) ---
+- name: Agent-OS | Generate the control-plane admin token (first run; root-only)
+  ansible.builtin.shell:
+    cmd: "umask 077 && head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 40 > /etc/agent-os/admin.token"
+    creates: /etc/agent-os/admin.token
+
+- name: Agent-OS | Lock down the admin token
+  ansible.builtin.file:
+    path: /etc/agent-os/admin.token
+    owner: root
+    group: root
+    mode: '0600'
+
 - name: Agent-OS | Install the control-plane API
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../scripts/control_plane.py"
