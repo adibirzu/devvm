@@ -127,6 +127,28 @@ Because every developer runs under a **dedicated, isolated UNIX account**, all c
 
 The only **shared** surface is the deliberate one: `/opt/shared-dev` (group `developers`, SGID, `umask 002`) symlinked into each home as `~/shared-workspace`, plus the `pair-claude` socket. Sharing is opt-in, not accidental.
 
+### Per-account GitHub identity — even in shared repos
+
+Each UNIX account commits and pushes as **its own GitHub account**, including inside
+the shared `/opt/shared-dev` repos:
+
+- **Attribution is enforced by environment, not config.** Each `~/.bashrc` exports
+  `GIT_AUTHOR_*` / `GIT_COMMITTER_*` for that user. These outrank a repo-level
+  `user.email` — so even if one developer sets an identity in a shared repo's
+  `.git/config`, everyone else's commits are still attributed to *them*.
+- **Push auth is per-user.** Credentials live only in each home (`~/.config/gh` after
+  `gh auth login`, or `~/.ssh/id_github`). The per-user `~/.ssh/config` routes
+  `github.com` through that account's own key. Nothing authenticates from the shared
+  folder.
+- **No shared token.** A shared `GITHUB_TOKEN` would make everyone push as one account,
+  so it's never set system-wide — each user authenticates individually.
+- **Verify anytime:** `git-whoami` prints the identity a commit will use, whether it's
+  enforced, your `gh` account, and the repo's push-auth method — and warns if a shared
+  `GITHUB_TOKEN` is present.
+
+Configure per developer via `GIT_NAME`/`GIT_EMAIL`/`GITHUB_USER` (and `DEV_N_*`); email
+defaults to GitHub's `<user>@users.noreply.github.com` so no personal address is required.
+
 ---
 
 ## 📊 MultiLLM Gateway & Usage Monitor
@@ -354,6 +376,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | AI CLIs (Claude / Codex / Gemini), Cursor | ✅ Implemented |
 | Shared MultiLLM gateway service + `/dashboard` over VPN | ✅ Implemented |
 | Per-user MultiLLM hooks, launchers, MCP registration | ✅ Implemented |
+| Per-account GitHub identity in shared repos (`git-whoami`) | ✅ Implemented |
 | Per-developer usage attribution (collectors → `tenant=<user>`) | ✅ Implemented |
 | Team usage dashboard `/team` + `usage-report` CLI | ✅ Implemented |
 | Per-user daily budget plumbing (`MULTILLM_USER_BUDGETS`) | ✅ Implemented |

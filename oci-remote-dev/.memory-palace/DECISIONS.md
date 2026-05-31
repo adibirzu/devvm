@@ -33,3 +33,11 @@ Append-only. Capture the rationale the code can't.
 - **2026-05-30 — Agents run in detached tmux on the VM (`agentctl`).**
   Why: decoupling the agent process from the SSH/WG client is what makes work survive
   disconnects and resumable on reconnect. Paired with `loginctl enable-linger` and mosh.
+
+- **2026-05-31 — Per-account GitHub identity enforced via env vars, not just config.**
+  Why: in shared `/opt/shared-dev` repos the `.git/` is shared, so a repo-level
+  `user.email` set by one developer would misattribute everyone else. `GIT_AUTHOR_*`/
+  `GIT_COMMITTER_*` in each `~/.bashrc` outrank repo-level config, guaranteeing each
+  account commits as itself. Push auth stays per-user (`~/.config/gh`, `~/.ssh/id_github`);
+  a shared `GITHUB_TOKEN` is forbidden (it would collapse everyone to one account).
+  `git-whoami` verifies the active identity and flags a stray shared token.

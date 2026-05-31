@@ -64,6 +64,47 @@
     - { name: "init.defaultBranch", value: "main" }
     - { name: "core.editor", value: "vim" }
     - { name: "pull.rebase", value: "false" }
+    # Per-user GitHub identity — each account commits as itself.
+    - { name: "user.name", value: "{{ dev.git_name | default(dev.name) }}" }
+    - { name: "user.email", value: "{{ dev.git_email | default(dev.name + '@users.noreply.github.com') }}" }
+    # Shared repos under /opt/shared-dev are group-owned; allow git to operate in them.
+    - { name: "safe.directory", value: "/opt/shared-dev" }
+    - { name: "safe.directory", value: "*" }
+
+# Bulletproof attribution in SHARED repos: env vars outrank a repo-level user.email
+# (which one developer could set in a shared .git/config), so each account's commits
+# are always attributed to that account — regardless of the folder or repo config.
+- name: Enforce per-user git identity via environment (overrides repo-level config)
+  ansible.builtin.blockinfile:
+    path: "/home/{{ dev.name }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED — per-user git identity"
+    create: true
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0644'
+    block: |
+      export GIT_AUTHOR_NAME="{{ dev.git_name | default(dev.name) }}"
+      export GIT_AUTHOR_EMAIL="{{ dev.git_email | default(dev.name + '@users.noreply.github.com') }}"
+      export GIT_COMMITTER_NAME="{{ dev.git_name | default(dev.name) }}"
+      export GIT_COMMITTER_EMAIL="{{ dev.git_email | default(dev.name + '@users.noreply.github.com') }}"
+      # Each account authenticates to GitHub as itself: run `gh auth login` once
+      # (creds live in ~/.config/gh, never shared) or add your own key to ~/.ssh.
+      # Never set a shared GITHUB_TOKEN — it would make everyone push as one account.
+
+- name: Per-user SSH config routes github.com through this account's own key
+  ansible.builtin.blockinfile:
+    path: "/home/{{ dev.name }}/.ssh/config"
+    marker: "# {mark} ANSIBLE MANAGED — github identity"
+    create: true
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0600'
+    block: |
+      Host github.com
+          HostName github.com
+          User git
+          IdentityFile ~/.ssh/id_github
+          IdentitiesOnly yes
 
 - name: Install MultiLLM gateway for developer
   ansible.builtin.shell: |

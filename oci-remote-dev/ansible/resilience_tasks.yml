@@ -31,6 +31,14 @@
     group: developers
     mode: '0755'
 
+- name: Resilience | Install git-whoami (verify per-account GitHub identity)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/git_whoami.sh"
+    dest: /usr/local/bin/git-whoami
+    owner: root
+    group: developers
+    mode: '0755'
+
 - name: Resilience | Keep user processes alive after logout (linger)
   ansible.builtin.command:
     cmd: "loginctl enable-linger {{ item.name }}"
