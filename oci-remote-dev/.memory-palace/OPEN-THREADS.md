@@ -2,6 +2,10 @@
 
 What's in flight. **Read this first on reconnect.** Move finished items to `SESSION-LOG.md`.
 
+## Recently shipped
+- [x] Mobile-friendly board; notification ring (agent-needs-input → pulsing ring +
+      browser/phone push via Claude Notification hook → `agent-notify` feed).
+
 ## Active direction
 Build the **Linux/server equivalent of cmux / AgentsRoom**: run multiple coding
 agents in parallel on the VM with visibility (status, project, LLM usage), local

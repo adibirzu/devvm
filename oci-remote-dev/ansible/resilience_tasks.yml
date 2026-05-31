@@ -39,6 +39,22 @@
     group: developers
     mode: '0755'
 
+- name: Resilience | Install agent-notify (notification-ring feed)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/agent_notify.sh"
+    dest: /usr/local/bin/agent-notify
+    owner: root
+    group: developers
+    mode: '0755'
+
+- name: Resilience | Install Claude notification-hook adapter
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/claude_notify_hook.sh"
+    dest: /usr/local/bin/claude-notify-hook
+    owner: root
+    group: developers
+    mode: '0755'
+
 - name: Resilience | Keep user processes alive after logout (linger)
   ansible.builtin.command:
     cmd: "loginctl enable-linger {{ item.name }}"

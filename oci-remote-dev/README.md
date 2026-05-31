@@ -390,6 +390,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | Hard per-tenant memory enforcement in the gateway | 🔭 Roadmap (Phase 2, multillm-side) |
 | Live multi-agent status board (`/agents.html`, `agent-status` timer) | ✅ Implemented |
 | Project-status surface — per-project git state + active agents | ✅ Implemented |
+| Notification ring — agent-needs-input alerts + browser/phone push | ✅ Implemented |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
 

@@ -6,8 +6,10 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from scripts.agent_status import (
+    apply_notifications,
     merge_board,
     parse_meta_dir,
+    recent_notifications,
     state_from_live,
 )
 
@@ -82,6 +84,42 @@ class TestMergeBoard(unittest.TestCase):
         self.assertEqual([d["name"] for d in b["developers"]], ["adi", "royce"])
         royce = next(d for d in b["developers"] if d["name"] == "royce")
         self.assertEqual(royce["sessions"], [])
+
+
+class TestNotifications(unittest.TestCase):
+    NOW = 1_700_000_600.0  # fixed "now"; events stamped relative to it
+
+    def _line(self, session, secs_ago, msg="needs input"):
+        import datetime
+        ts = datetime.datetime.fromtimestamp(self.NOW - secs_ago, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return f'{{"ts":"{ts}","session":"{session}","user":"adi","message":"{msg}"}}'
+
+    def test_recent_keeps_in_window_drops_old(self) -> None:
+        lines = [self._line("agent:web:claude", 60), self._line("agent:api:codex", 5000)]
+        out = recent_notifications(lines, self.NOW, window_sec=600)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["session"], "agent:web:claude")
+
+    def test_recent_ignores_malformed_lines(self) -> None:
+        lines = ["not json", "", self._line("agent:web:claude", 10)]
+        self.assertEqual(len(recent_notifications(lines, self.NOW)), 1)
+
+    def test_apply_sets_needs_input_on_matching_session(self) -> None:
+        devs = [{"name": "adi", "sessions": [
+            {"name": "agent:web:claude"}, {"name": "agent:api:codex"}]}]
+        notifs = {"adi": [{"session": "agent:web:claude", "message": "input?"}]}
+        ringing = apply_notifications(devs, notifs)
+        self.assertEqual(ringing, 1)
+        states = {s["name"]: s["needs_input"] for s in devs[0]["sessions"]}
+        self.assertTrue(states["agent:web:claude"])
+        self.assertFalse(states["agent:api:codex"])
+        self.assertTrue(devs[0]["needs_input"])
+
+    def test_apply_no_notifications_means_quiet(self) -> None:
+        devs = [{"name": "royce", "sessions": [{"name": "agent:x:claude"}]}]
+        self.assertEqual(apply_notifications(devs, {}), 0)
+        self.assertFalse(devs[0]["needs_input"])
+        self.assertFalse(devs[0]["sessions"][0]["needs_input"])
 
 
 if __name__ == "__main__":

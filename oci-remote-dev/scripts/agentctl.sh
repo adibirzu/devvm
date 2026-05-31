@@ -78,7 +78,8 @@ cmd_start() {
         return 0
     fi
 
-    "${TMUX[@]}" new-session -d -s "$sname" -c "$dir" "${cmd[@]}"
+    # -e injects AGENTCTL_SESSION so the agent's notification hook can tag the ring.
+    "${TMUX[@]}" new-session -d -s "$sname" -e "AGENTCTL_SESSION=$name" -c "$dir" "${cmd[@]}"
     # Persist metadata for status/restoration (timestamps come from `date` at write time).
     {
         echo "name=$name"
@@ -200,7 +201,7 @@ cmd_restore() {
         if [[ "$restartable" == "false" ]]; then skipped=$((skipped+1)); continue; fi
         [[ -d "$dir" ]] || { echo "skip $name: dir gone ($dir)"; skipped=$((skipped+1)); continue; }
         # cmd was stored space-joined; replay via the login shell so PATH/agents resolve.
-        "${TMUX[@]}" new-session -d -s "$sname" -c "$dir" "${cmd:-bash}"
+        "${TMUX[@]}" new-session -d -s "$sname" -e "AGENTCTL_SESSION=$name" -c "$dir" "${cmd:-bash}"
         echo "restored $name (dir: $dir)"
         restored=$((restored+1))
     done

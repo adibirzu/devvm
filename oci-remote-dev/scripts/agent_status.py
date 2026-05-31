@@ -13,6 +13,7 @@ whole board.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import subprocess
 import sys
@@ -20,6 +21,53 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+NOTIFY_WINDOW_SEC = 600  # a notification "rings" for 10 minutes, then fades
+
+
+def _parse_iso(ts: str) -> float:
+    try:
+        return (
+            datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+            .replace(tzinfo=datetime.timezone.utc)
+            .timestamp()
+        )
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def recent_notifications(lines: List[str], now_epoch: float, window_sec: int = NOTIFY_WINDOW_SEC) -> List[Dict[str, Any]]:
+    """Parse JSONL notification lines, keeping only events within the time window."""
+    out: List[Dict[str, Any]] = []
+    for ln in lines:
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            ev = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        if now_epoch - _parse_iso(ev.get("ts", "")) <= window_sec:
+            out.append(ev)
+    return out
+
+
+def apply_notifications(developers: List[Dict[str, Any]], notifs_by_user: Dict[str, List[Dict[str, Any]]]) -> int:
+    """Annotate sessions/developers with needs_input from recent notifications.
+
+    Returns the total count of developers currently ringing.
+    """
+    ringing_total = 0
+    for dev in developers:
+        evs = notifs_by_user.get(dev["name"], [])
+        ringing_sessions = {e.get("session") for e in evs}
+        for s in dev.get("sessions", []):
+            s["needs_input"] = s["name"] in ringing_sessions
+        dev["notifications"] = evs[-5:]
+        dev["needs_input"] = any(s.get("needs_input") for s in dev.get("sessions", [])) or bool(evs)
+        if dev["needs_input"]:
+            ringing_total += 1
+    return ringing_total
 
 
 def parse_meta_dir(meta_dir: Path) -> List[Dict[str, str]]:
@@ -127,6 +175,18 @@ def discover_developers(home_root: Path) -> List[str]:
     return sorted(p.name for p in home_root.iterdir() if (p / ".agentctl").is_dir())
 
 
+def _read_notifications(home_root: Path, developers: List[str], now_epoch: float) -> Dict[str, List[Dict[str, Any]]]:
+    notifs: Dict[str, List[Dict[str, Any]]] = {}
+    for user in developers:
+        feed = home_root / user / ".agentctl" / "notifications.jsonl"
+        if feed.exists():
+            lines = feed.read_text(encoding="utf-8", errors="replace").splitlines()
+            notifs[user] = recent_notifications(lines, now_epoch)
+        else:
+            notifs[user] = []
+    return notifs
+
+
 def build(developers: List[str], home_root: Path, gateway: Optional[str]) -> Dict[str, Any]:
     per_user, live = {}, {}
     for user in developers:
@@ -134,11 +194,16 @@ def build(developers: List[str], home_root: Path, gateway: Optional[str]) -> Dic
         per_user[user] = parse_meta_dir(agentctl / "meta")
         live[user] = live_sessions_for(user, str(agentctl / "tmux.sock"))
     costs = fetch_costs(gateway) if gateway else {}
-    return build_with(per_user, live, costs)
+    now_epoch = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    notifs = _read_notifications(home_root, developers, now_epoch)
+    return build_with(per_user, live, costs, notifs)
 
 
-def build_with(per_user, live, costs) -> Dict[str, Any]:
-    return merge_board(per_user, live, costs)
+def build_with(per_user, live, costs, notifs=None) -> Dict[str, Any]:
+    board = merge_board(per_user, live, costs)
+    ringing = apply_notifications(board["developers"], notifs or {})
+    board["totals"]["needs_input"] = ringing
+    return board
 
 
 def main(argv: Optional[List[str]] = None) -> int:
