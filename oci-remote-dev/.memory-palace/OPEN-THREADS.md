@@ -24,7 +24,8 @@ this brings the experience to the VPN-reachable Linux VM.
 - [x] Split `devvm` into its own **private** repo (github.com/adibirzu/devvm).
       `~/dev/devvm` now tracks it; parent `~/dev` no longer double-tracks. Pre-push
       audit caught + fixed real tenancy namespaces hardcoded in `security_gate.py`.
-- [ ] tmux-resurrect/continuum for session persistence across VM reboots.
+- [x] Session persistence across VM reboots — `agentctl restore` + boot service
+      (metadata replay; more reliable than tmux-resurrect for CLI agents).
 
 ## Watch-outs
 - **This is now its own git repo** (`github.com/adibirzu/devvm`). Work in `~/dev/devvm`;

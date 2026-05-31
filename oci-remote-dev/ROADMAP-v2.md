@@ -31,8 +31,12 @@ The substrate that makes everything else survivable, shipped first:
   per-project git state (branch, clean/dirty, ahead/behind, last commit) with the
   agents working in it; rendered as a Projects section on the board.
 
-**Next on this track:** persist tmux sessions across VM reboots (tmux-resurrect /
-continuum), and a mobile-friendly view of the board.
+- ✅ **Reboot persistence** — `agentctl restore` replays session metadata, and
+  `agentctl-restore.service` runs it per-developer on boot, so detached agents come
+  back after a VM reboot (skips `--no-restart` sessions). More reliable for CLI agents
+  than tmux-resurrect, which can't restore an agent's internal state anyway.
+
+**Next on this track:** a mobile-friendly view of the board.
 
 ---
 
