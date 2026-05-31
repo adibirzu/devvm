@@ -2,8 +2,8 @@
 project: oci-remote-dev
 task: PAI/Obi integration — portable multi-device life-OS on the agentic dev fleet
 effort: E3
-phase: build
-progress: 0/42
+phase: verify
+progress: 40/42
 mode: build
 started: 2026-05-31
 updated: 2026-05-31
@@ -228,4 +228,14 @@ unit-tested to the repo's existing standards.
 
 ## Verification
 
-(Recorded during EXECUTE/VERIFY as each ISC is probed.)
+- ISC-1..3: branch `feat/pai-integration-phase6` pushed to origin; 9 commits. (git log/push rc=0)
+- ISC-5,40: `security_gate.py --mode full` → "passed! No violations" (run repeatedly).
+- ISC-6..11,31..37: deploy/docs/.env/guide files present + committed.
+- ISC-12..26: `test_pai_sync.py` + `test_pai_runtime_registry.py` green; registry validates 5 runtimes; agy/gemini aliases resolve to antigravity.
+- ISC-19..26 (PAI enhancement): agentctl + agent-job resolve non-builtin runtimes via pai-runtimes; +test stubbing the resolver. 191 tests green total.
+- AGY: binary `agy`, headless `agy -p {prompt}` (verified from antigravity.google docs); Ansible installs via download-then-run (no pipe-to-shell), gated by install_antigravity.
+- **LIVE on VM (<VM_PUBLIC_IP>), via `ansible/deploy_pai.yml` (ok=6 changed=4 failed=0):**
+  `pai-runtimes`, `pai-sync`, `pai-bootstrap` installed in /usr/local/bin; `/opt/agent-os/runtimes.json` deployed; registry validates; `resolve agy` and `resolve gemini` both → `agy -p` with gateway env. `agy` binary present on VM.
+- VM deps (separate `install_deps.yml`, ok=7): age 1.1.1, pytest 7.4.4, mosh, rsync installed.
+- ISC-4,42: PR pending — branch pushed; gh token invalid so PR object opened manually at github.com/adibirzu/devvm.
+- Deferred (DEFERRED-VERIFY): ISC-27..30 per-user encryption-at-rest verified by code+docs; live per-user `pai-bootstrap` runs when a real `developers` list is passed (CLIs-only deploy used `developers=[]`). Follow-up: deploy with the fleet's actual developer list to exercise per-user bootstrap + age-identity creation.
