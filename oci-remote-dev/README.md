@@ -447,10 +447,47 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | Read-only fleet control-plane API (VPN-only, `:8082`) | ✅ Implemented |
 | Control-plane mutations — admin-token auth, queued account changes, live budgets | ✅ Implemented |
 | Scheduled autonomous agent jobs (`agent-job`, per-user timer) | ✅ Implemented |
+| **PAI / Obi per-user deploy** (`install_pai`, `pai-bootstrap`, 0700, never shared) | ✅ Implemented |
+| **Pluggable agent-runtime registry** (Claude/Codex/Gemini + Antigravity/Hermes/nano-claw) | ✅ Implemented |
+| **Multi-device encrypted MEMORY sync** (`pai-sync`, age, offline-first) | ✅ Implemented |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
 
 See **[`ROADMAP-v2.md`](ROADMAP-v2.md)** for the agentic-OS direction.
+
+---
+
+## 🧬 PAI / Obi Integration (Phase 6)
+
+Run the principal's own **PAI** (the Algorithm + skills + MEMORY + the *Obi* DA) on
+the fleet, and carry the *same* Obi knowledge across all your machines — without
+personal data ever sitting in plaintext in the cloud or on the shared VM.
+
+The substrate (durable sessions, per-tenant isolation, MultiLLM gateway, guardrails,
+agent jobs) already exists — Phase 6 is the **bridge**, not a rebuild.
+
+```bash
+# .env.local
+INSTALL_PAI=true
+PAI_REPO="git@github.com:<you>/pai.git"                 # skills/Algorithm/hooks (shareable)
+PAI_MEMORY_REPO="git@github.com:<you>/pai-memory.git"   # PRIVATE, age-encrypted MEMORY
+PAI_SYNC_ENABLED=true
+PAI_AGE_RECIPIENTS="age1...,age1..."                    # one public key per device
+```
+
+- **Per-user, private** — PAI installs into each developer's `0700` home; personal
+  MEMORY (TELOS/health/finances) is `age`-encrypted at rest, decrypted only in
+  session, **never** in `/opt/shared-dev`.
+- **Same Obi everywhere** — `pai-sync` keeps MEMORY identical across Macs/Ubuntu/
+  Windows via a private encrypted repo (offline-first; add a cloud remote by config).
+- **Governed multi-runtime** — `pai-runtimes` registers Claude, Codex, Gemini, and
+  **Antigravity (AGY), Hermes, nano-claw/OpenClaw** behind one data file; all inherit
+  the PreToolUse guardrail and route usage through the MultiLLM gateway.
+
+Docs: [`docs/PAI-INTEGRATION.md`](docs/PAI-INTEGRATION.md) ·
+[`docs/MULTI-DEVICE-SYNC.md`](docs/MULTI-DEVICE-SYNC.md) ·
+[`docs/AGENT-RUNTIMES.md`](docs/AGENT-RUNTIMES.md). The capability is tracked as an
+ISA at [`ISA.md`](ISA.md).
 
 ---
 

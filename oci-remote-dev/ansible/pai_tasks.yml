@@ -1,0 +1,65 @@
+---
+# Phase 6 — PAI / Obi integration. Deploys PAI per-user (never system-wide, never
+# into /opt/shared-dev), installs the pluggable agent-runtime registry + the
+# multi-device encrypted-MEMORY sync tool, and ensures `age` is available for
+# personal-MEMORY encryption at rest. Gated by install_pai.
+#
+# Privacy model: each developer's PAI lives in their own 0700 home tree; personal
+# MEMORY is age-encrypted at rest and decrypted only in-session. The shareable
+# parts (skills/Algorithm/hooks) ride the PAI repo; personal MEMORY rides a
+# separate PRIVATE encrypted repo. See docs/PAI-INTEGRATION.md.
+
+- name: PAI | Install age (personal-MEMORY encryption at rest)
+  ansible.builtin.apt:
+    name:
+      - age
+    state: present
+  when: pai_encrypt_memory | default(true)
+
+- name: PAI | Library directory for shared agent-runtime data
+  ansible.builtin.file:
+    path: /opt/agent-os
+    state: directory
+    owner: root
+    group: developers
+    mode: '0775'
+
+- name: PAI | Deploy the pluggable agent-runtime registry
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../agent-os/runtimes.json"
+    dest: /opt/agent-os/runtimes.json
+    owner: root
+    group: developers
+    mode: '0664'
+
+- name: PAI | Install fleet PAI CLIs (runtime registry, sync, bootstrap)
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: developers
+    mode: '0755'
+  loop:
+    - { src: "{{ playbook_dir }}/../scripts/pai_runtime_registry.py", dest: /usr/local/bin/pai-runtimes }
+    - { src: "{{ playbook_dir }}/../scripts/pai_sync.py", dest: /usr/local/bin/pai-sync }
+    - { src: "{{ playbook_dir }}/../scripts/pai_bootstrap.sh", dest: /usr/local/bin/pai-bootstrap }
+
+- name: PAI | Validate the deployed runtime registry
+  ansible.builtin.command:
+    cmd: /usr/local/bin/pai-runtimes --registry /opt/agent-os/runtimes.json validate
+  changed_when: false
+
+- name: PAI | Bootstrap PAI for each developer (per-user, never as root)
+  become: true
+  become_user: "{{ item.name }}"
+  ansible.builtin.command:
+    cmd: /usr/local/bin/pai-bootstrap
+  environment:
+    PAI_REPO: "{{ pai_repo | default('') }}"
+    PAI_MEMORY_REPO: "{{ pai_memory_repo | default('') }}"
+    PAI_SYNC_ENABLED: "{{ pai_sync_enabled | default('false') | string }}"
+    PAI_AGE_RECIPIENTS: "{{ pai_age_recipients | default('') }}"
+  loop: "{{ developers }}"
+  register: pai_bootstrap_result
+  changed_when: "'cloning' in pai_bootstrap_result.stdout | default('')"
+  failed_when: false
