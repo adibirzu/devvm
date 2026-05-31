@@ -170,3 +170,13 @@
     PY
   register: guardrail_hook
   changed_when: "'added' in guardrail_hook.stdout"
+
+- name: Generate ~/.claude/.mcp.json from the approved MCP registry
+  become_user: "{{ dev.name }}"
+  when: install_agent_os | default(true)
+  ansible.builtin.command:
+    cmd: /usr/local/bin/mcp-registry apply --registry /opt/agent-os/registry.json
+  environment:
+    MULTILLM_GATEWAY_PORT: "{{ multillm_gateway_port | default(8080) }}"
+  register: mcp_apply
+  changed_when: "'applied' in mcp_apply.stdout"

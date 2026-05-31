@@ -14,6 +14,7 @@
   loop:
     - { path: /usr/local/lib/agent-os, group: root, mode: '0755' }
     - { path: /etc/agent-os, group: developers, mode: '0755' }
+    - { path: /opt/agent-os, group: developers, mode: '0775' }
 
 - name: Agent-OS | Install the guardrail policy engine (library)
   ansible.builtin.copy:
@@ -47,3 +48,25 @@
     fi
   args:
     creates: /etc/agent-os/policy.json
+
+# --- MCP tool registry (Phase 3 Task 2) ---
+- name: Agent-OS | Deploy the central MCP tool registry
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../agent-os/registry.json"
+    dest: /opt/agent-os/registry.json
+    owner: root
+    group: developers
+    mode: '0664'
+
+- name: Agent-OS | Install mcp-registry CLI
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/mcp_registry.py"
+    dest: /usr/local/bin/mcp-registry
+    owner: root
+    group: developers
+    mode: '0755'
+
+- name: Agent-OS | Validate the deployed registry
+  ansible.builtin.command:
+    cmd: /usr/local/bin/mcp-registry validate --registry /opt/agent-os/registry.json
+  changed_when: false
