@@ -14,7 +14,7 @@
     name:
       - age
     state: present
-  when: pai_encrypt_memory | default(true)
+  when: pai_encrypt_memory | default(true) | bool
 
 # Antigravity (AGY) — Google's terminal coding agent; replaces the Gemini CLI as
 # the Google-family runtime. Installs the `agy` binary fleet-wide. Headless auth
@@ -34,7 +34,7 @@
     checksum: "{{ ('sha256:' + agy_installer_sha256) if (agy_installer_sha256 | default('')) else omit }}"
   register: agy_fetch
   failed_when: false
-  when: install_antigravity | default(true)
+  when: install_antigravity | default(true) | bool
 
 - name: PAI | Run the fetched Antigravity installer (only if agy not present)
   ansible.builtin.command:
@@ -46,7 +46,7 @@
   changed_when: "'installed' in (agy_install.stdout | default('') | lower)"
   failed_when: false
   when:
-    - install_antigravity | default(true)
+    - install_antigravity | default(true) | bool
     - agy_fetch is succeeded
 
 - name: PAI | Library directory for shared agent-runtime data
