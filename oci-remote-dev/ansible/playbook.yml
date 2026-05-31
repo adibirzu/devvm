@@ -10,6 +10,7 @@
     install_gemini: true
     install_code_server: true
     install_podman: true
+    install_github_cli: true
     install_csp_clis: true
     install_aws_cli: true
     install_azure_cli: true
@@ -19,7 +20,9 @@
     multillm_gateway_port: 8080
     install_resilience_layer: true
     install_agent_os: true
-    multillm_source_path: "../multillm"
+    multillm_source_path: ""
+    multillm_git_url: "https://github.com/adibirzu/multillm.git"
+    multillm_git_version: "main"
     # developers list will be passed as extra_vars
     developers: []
     wg_server_ip: "10.200.200.1"
@@ -64,6 +67,7 @@
           - pipx
           - gnupg
           - lsb-release
+          - unzip
         state: present
 
     - name: Install local container tooling
@@ -79,13 +83,52 @@
         state: present
       when: install_podman | default(true)
 
-    - name: Install AWS CLI from Ubuntu packages
-      ansible.builtin.apt:
-        name: awscli
-        state: present
+    - name: Check AWS CLI availability
+      ansible.builtin.command:
+        cmd: aws --version
+      register: aws_cli_check
+      changed_when: false
+      failed_when: false
       when:
         - install_csp_clis | default(true)
         - install_aws_cli | default(true)
+
+    - name: Download AWS CLI v2 installer
+      ansible.builtin.get_url:
+        url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+        dest: /tmp/awscliv2.zip
+        mode: '0644'
+      when:
+        - install_csp_clis | default(true)
+        - install_aws_cli | default(true)
+        - aws_cli_check.rc != 0
+
+    - name: Reset AWS CLI v2 installer directory
+      ansible.builtin.file:
+        path: /tmp/aws
+        state: absent
+      when:
+        - install_csp_clis | default(true)
+        - install_aws_cli | default(true)
+        - aws_cli_check.rc != 0
+
+    - name: Unpack AWS CLI v2 installer
+      ansible.builtin.unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp
+        remote_src: true
+      when:
+        - install_csp_clis | default(true)
+        - install_aws_cli | default(true)
+        - aws_cli_check.rc != 0
+
+    - name: Install AWS CLI v2
+      ansible.builtin.command:
+        cmd: /tmp/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+      when:
+        - install_csp_clis | default(true)
+        - install_aws_cli | default(true)
+        - aws_cli_check.rc != 0
 
     - name: Ensure APT keyring directory exists
       ansible.builtin.file:
@@ -95,6 +138,27 @@
         group: root
         mode: '0755'
       when: install_csp_clis | default(true)
+
+    - name: Install GitHub CLI repository key
+      ansible.builtin.get_url:
+        url: https://cli.github.com/packages/githubcli-archive-keyring.gpg
+        dest: /etc/apt/keyrings/githubcli-archive-keyring.gpg
+        mode: '0644'
+      when: install_github_cli | default(true)
+
+    - name: Add GitHub CLI APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main"
+        state: present
+        filename: github-cli
+      when: install_github_cli | default(true)
+
+    - name: Install GitHub CLI
+      ansible.builtin.apt:
+        name: gh
+        state: present
+        update_cache: true
+      when: install_github_cli | default(true)
 
     - name: Install Azure CLI repository key
       ansible.builtin.get_url:
@@ -302,16 +366,49 @@
             mode: '0755'
           ignore_errors: true
 
-    - name: Deploy MultiLLM gateway source to remote server
-      ansible.builtin.copy:
-        src: "{{ multillm_source_path }}"
-        dest: /opt/
-        owner: root
-        group: developers
-        mode: '0775'
+    - name: Provision the MultiLLM gateway source
+      when: install_multillm_gateway | default(true)
+      block:
+        # Use a local checkout if the operator has one beside the project (offline /
+        # development); otherwise clone the public repo so a fresh deploy works OOTB.
+        - name: Check for a local MultiLLM checkout on the controller
+          ansible.builtin.stat:
+            path: "{{ playbook_dir }}/{{ multillm_source_path | default('') }}"
+          delegate_to: localhost
+          become: false
+          register: multillm_local
+          when: (multillm_source_path | default('')) | length > 0
+
+        - name: Copy the local MultiLLM source to the VM (offline / development)
+          ansible.builtin.copy:
+            src: "{{ multillm_source_path }}"
+            dest: /opt/
+            owner: root
+            group: developers
+            mode: '0775'
+          when: multillm_local.stat is defined and multillm_local.stat.exists
+
+        - name: Clone MultiLLM from GitHub (default — public repo, works OOTB)
+          ansible.builtin.git:
+            repo: "{{ multillm_git_url | default('https://github.com/adibirzu/multillm.git') }}"
+            dest: /opt/multillm
+            version: "{{ multillm_git_version | default('main') }}"
+            depth: 1
+            force: true
+          when: not (multillm_local.stat is defined and multillm_local.stat.exists)
+
+        - name: Ensure /opt/multillm is group-accessible to developers
+          ansible.builtin.file:
+            path: /opt/multillm
+            state: directory
+            owner: root
+            group: developers
+            mode: '0775'
+            recurse: false
 
     - name: Configure MultiLLM team usage monitoring (gateway + per-user collectors)
       ansible.builtin.include_tasks: multillm_tasks.yml
+      when: install_multillm_gateway | default(true)
 
     - name: Configure disconnect-resilience layer (durable agent sessions, mosh, memory palace)
       ansible.builtin.include_tasks: resilience_tasks.yml

@@ -1385,6 +1385,7 @@ class MultiCloudDeployer:
             "install_gemini": self._env_bool("INSTALL_GEMINI", True),
             "install_code_server": self._env_bool("INSTALL_CODE_SERVER", True),
             "install_podman": self._env_bool("INSTALL_PODMAN", True),
+            "install_github_cli": self._env_bool("INSTALL_GITHUB_CLI", True),
             "install_csp_clis": self._env_bool("INSTALL_CSP_CLIS", True),
             "install_aws_cli": self._env_bool("INSTALL_AWS_CLI", True),
             "install_azure_cli": self._env_bool("INSTALL_AZURE_CLI", True),
@@ -1403,9 +1404,11 @@ class MultiCloudDeployer:
             "multillm_install_source": self._get_env(
                 "MULTILLM_INSTALL_SOURCE", "/opt/multillm"
             ),
-            "multillm_source_path": self._get_env(
-                "MULTILLM_SOURCE_PATH", "../multillm"
+            "multillm_source_path": self._get_env("MULTILLM_SOURCE_PATH", ""),
+            "multillm_git_url": self._get_env(
+                "MULTILLM_GIT_URL", "https://github.com/adibirzu/multillm.git"
             ),
+            "multillm_git_version": self._get_env("MULTILLM_GIT_VERSION", "main"),
             "install_resilience_layer": self._env_bool(
                 "INSTALL_RESILIENCE_LAYER", True
             ),

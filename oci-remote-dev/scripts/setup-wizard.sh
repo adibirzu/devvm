@@ -162,7 +162,7 @@ main() {
     AZURE_LOCATION=""
     AZURE_VM_SIZE=""
     AZURE_SUBNET_ID=""
-    MULTILLM_SOURCE_PATH="../multillm"
+    MULTILLM_SOURCE_PATH=""
 
     VM_NAME="remote-dev-server"
     VM_SHAPE="VM.Standard.E6.Flex"
@@ -310,6 +310,7 @@ main() {
 
     prompt_yn INSTALL_CURSOR "Install Cursor IDE?" "y"
     prompt_yn INSTALL_PODMAN "Install Podman local container tooling?" "y"
+    prompt_yn INSTALL_GITHUB_CLI "Install GitHub CLI (gh)?" "y"
     prompt_yn INSTALL_CSP_CLIS "Install all CSP CLIs on the VM?" "y"
     if [[ "$INSTALL_CSP_CLIS" == "true" ]]; then
         INSTALL_OCI_CLI=true
@@ -323,7 +324,7 @@ main() {
         prompt_yn INSTALL_AZURE_CLI "Install Azure CLI?" "y"
     fi
 
-    prompt MULTILLM_SOURCE_PATH "Local MultiLLM source path copied during Ansible setup" "../multillm"
+    prompt MULTILLM_SOURCE_PATH "Local MultiLLM source path (empty = clone the public repo)" ""
 
     prompt NODE_VERSION "Node.js version" "20"
     prompt PYTHON_VERSION "Python version" "3.12"
@@ -450,6 +451,7 @@ INSTALL_CODE_SERVER=$INSTALL_CODE_SERVER
 CODE_SERVER_PORT=$CODE_SERVER_PORT
 INSTALL_CURSOR=$INSTALL_CURSOR
 INSTALL_PODMAN=$INSTALL_PODMAN
+INSTALL_GITHUB_CLI=$INSTALL_GITHUB_CLI
 INSTALL_CSP_CLIS=$INSTALL_CSP_CLIS
 INSTALL_OCI_CLI=$INSTALL_OCI_CLI
 INSTALL_AWS_CLI=$INSTALL_AWS_CLI

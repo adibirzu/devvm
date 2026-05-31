@@ -1,0 +1,26 @@
+# Gitleaks configuration for the devvm repo (project lives in oci-remote-dev/).
+#
+# The authoritative leak gate is oci-remote-dev/scripts/security_gate.py (run in CI),
+# which detects OCIDs, restricted IPs, tenancy namespaces, and private keys. This
+# gitleaks config is a complementary standard-tool pass; it allowlists the same
+# directories security_gate.py ignores — detection fixtures and local-only files
+# that legitimately contain secret-SHAPED (but synthetic) strings.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Detection fixtures, local-only files, and the scanner's own patterns"
+
+paths = [
+    # Tests assert the scanner catches key/OCID/namespace shapes — fixtures are synthetic.
+    '''^oci-remote-dev/tests/''',
+    # Local-only, git-ignored (real keys/configs/env never enter the tree).
+    '''^oci-remote-dev/configs/''',
+    '''\.local\.[a-z0-9]+$''',
+    '''(^|/)\.env(\.|$)''',
+    # The scanner + this config reference patterns by name — never scan ourselves.
+    '''oci-remote-dev/scripts/security_gate\.py$''',
+    '''(^|/)\.gitleaks\.toml$''',
+    '''(^|/)README\.md$''',
+]

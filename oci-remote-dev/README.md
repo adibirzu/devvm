@@ -202,9 +202,15 @@ INSTALL_MULTILLM_GATEWAY=true       # set false to skip monitoring entirely
 MULTILLM_GATEWAY_PORT=<PORT>        # gateway / dashboard port (WG-only)
 MULTILLM_COLLECT_INTERVAL_MIN=15    # how often each collector reports
 MULTILLM_USER_BUDGETS="${DEV_2_NAME}=5,${DEV_3_NAME}=10"   # optional per-user daily USD caps
-MULTILLM_INSTALL_SOURCE=/opt/multillm    # pip target: synced source (default), PyPI spec, or git URL
-MULTILLM_SOURCE_PATH=../multillm          # local source copied into /opt/multillm
+MULTILLM_INSTALL_SOURCE=/opt/multillm    # pip target on the VM (default), PyPI spec, or git URL
+MULTILLM_SOURCE_PATH=                     # empty = clone the public repo (OOTB); or a local checkout path
+MULTILLM_GIT_URL=https://github.com/adibirzu/multillm.git   # cloned to /opt/multillm when SOURCE_PATH is empty
+MULTILLM_GIT_VERSION=main
 ```
+
+> By default the deploy **clones the public MultiLLM repo** to `/opt/multillm` — no
+> local checkout required. Set `MULTILLM_SOURCE_PATH` to a local clone only for offline
+> or local-development work.
 
 ---
 
