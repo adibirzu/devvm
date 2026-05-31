@@ -8,8 +8,8 @@ You drive it from your Mac with the native **cmux** agent workspace over the VPN
 
 ## 🚀 What You Get
 
-- **👥 Isolated multi-developer sandboxes** — dedicated UNIX accounts (`devuser`, `adi`, `royce`, … unlimited) each with their own `code-server`, XFCE/XRDP desktop, shell, OAuth sessions, and API keys. Nothing leaks between users.
-- **🔐 Split-tunnel WireGuard VPN** — every service is reachable **only** over the private `10.200.200.0/24` tunnel. Defaults are tuned so the VPN never hijacks your Mac's DNS or internet routing.
+- **👥 Isolated multi-developer sandboxes** — dedicated UNIX accounts (`${ADMIN_USERNAME}`, `${DEV_N_NAME}`, … unlimited) each with their own `code-server`, XFCE/XRDP desktop, shell, OAuth sessions, and API keys. Nothing leaks between users.
+- **🔐 Split-tunnel WireGuard VPN** — every service is reachable **only** over the private `${WG_NETWORK}` tunnel. Defaults are tuned so the VPN never hijacks your Mac's DNS or internet routing.
 - **🤖 Shared MultiLLM gateway** — a system service that proxies Claude / Codex / Gemini / Ollama traffic, tracks token + cost usage per developer, and serves a live dashboard over the VPN.
 - **🖥️ cmux-driven local workflow** — run the native macOS agent workspace locally and connect its panes to the remote sandbox over WireGuard.
 - **🤝 Live pair programming** — `pair-claude` shares one AI coding session across developers via a group-owned tmux socket.
@@ -24,29 +24,29 @@ You drive it from your Mac with the native **cmux** agent workspace over the VPN
                           ┌──────────────────────────────────────────────┐
                           │                Public Internet                │
                           └──────────────────────────────────────────────┘
-                                              │  SSH:22  WG:51820 (only)
+                                              │  SSH:22  WG:${WG_PORT} (only)
                                    ┌──────────┴──────────┐
                                    │   OCI VM Instance   │  <VM_PUBLIC_IP>
-                                   │ VM.Standard.E6.Flex │  4 OCPU / 32 GB / Ubuntu 24.04
+                                   │ ${VM_SHAPE}         │  ${VM_OCPUS} OCPU / ${VM_MEMORY_GB} GB / Ubuntu ${UBUNTU_VERSION}
                                    └──────────┬──────────┘
                                               │
-        Local Mac (cmux) ───[ WireGuard split tunnel 10.200.200.0/24 ]───┐
+        Local Mac (cmux) ───[ WireGuard split tunnel ${WG_NETWORK} ]─────┐
                                               │                          │
                           ┌───────────────────┴───────────────────────┐  │
-                          │  WireGuard Server  wg0  → 10.200.200.1     │◄─┘
+                          │  WireGuard Server  wg0  → ${WG_SERVER_IP}  │◄─┘
                           └───────────────────┬───────────────────────┘
                                               │
         ┌─────────────────────────────────────┼─────────────────────────────────────┐
-        │  Reachable ONLY over the VPN at 10.200.200.1                                │
+        │  Reachable ONLY over the VPN at ${WG_SERVER_IP}                             │
         │                                                                            │
         │   :80   Developer landing dashboard (per-user cards)                        │
-        │   :8080 MultiLLM gateway + /dashboard (usage, cost, latency)                │
-        │   :3389 XRDP visual desktops (XFCE, one session per user)                   │
+        │   :${MULTILLM_GATEWAY_PORT} MultiLLM gateway + /dashboard                   │
+        │   :${RDP_PORT} XRDP visual desktops (XFCE, one session per user)            │
         │                                                                            │
         │   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐                    │
-        │   │ devuser      │   │ adi          │   │ royce        │   … unlimited      │
+        │   │ ${ADMIN_USERNAME} │ │ ${DEV_2_NAME} │ │ ${DEV_3_NAME} │   … unlimited   │
         │   │ code-server  │   │ code-server  │   │ code-server  │                    │
-        │   │  :8443       │   │  :8444       │   │  :8445       │                    │
+        │   │:${CODE_SERVER_PORT}││:${DEV_2_CODE_SERVER_PORT}││:${DEV_3_CODE_SERVER_PORT}│
         │   │ ~/.bashrc    │   │ ~/.bashrc    │   │ ~/.bashrc    │  ← isolated creds  │
         │   │ OAuth/API ✓  │   │ OAuth/API ✓  │   │ OAuth/API ✓  │                    │
         │   └──────┬───────┘   └──────┬───────┘   └──────┬───────┘                    │
@@ -62,7 +62,8 @@ You drive it from your Mac with the native **cmux** agent workspace over the VPN
 ### 1. Configure
 
 ```bash
-./scripts/setup-wizard.sh        # interactive → renders .env.local from .env.example
+cp .env.example .env             # local-only; edit or let the wizard write it
+./scripts/setup-wizard.sh        # interactive → renders .env from .env.example
 ```
 
 Prompts for OCI profile/compartment, VM shape, WireGuard settings (including **split vs full tunnel**), developer accounts, and the MultiLLM gateway.
@@ -91,12 +92,11 @@ Once connected, everything lives behind the tunnel:
 
 | Service | URL |
 |---|---|
-| Developer landing dashboard | `http://10.200.200.1` |
-| MultiLLM usage dashboard | `http://10.200.200.1:8080/dashboard` |
-| `devuser` Web IDE | `http://10.200.200.1:8443` |
-| `adi` Web IDE | `http://10.200.200.1:8444` |
-| `royce` Web IDE | `http://10.200.200.1:8445` |
-| RDP desktops | `10.200.200.1:3389` |
+| Developer landing dashboard | `http://${WG_SERVER_IP}` |
+| MultiLLM usage dashboard | `http://${WG_SERVER_IP}:${MULTILLM_GATEWAY_PORT}/dashboard` |
+| Admin Web IDE | `http://${WG_SERVER_IP}:${CODE_SERVER_PORT}` |
+| Developer N Web IDE | `http://${WG_SERVER_IP}:${DEV_N_CODE_SERVER_PORT}` |
+| RDP desktops | `${WG_SERVER_IP}:${RDP_PORT}` |
 
 ---
 
@@ -107,12 +107,12 @@ While the server runs on Linux, you drive it from your Mac with [**cmux**](https
 **Download cmux locally** on each developer's Mac, then connect its tabbed agent panes to your isolated remote sandbox over the WireGuard tunnel:
 
 ```bash
-ssh -i ~/.ssh/<your_key> adi@10.200.200.1
+ssh -i "${SSH_PRIVATE_KEY_PATH:-${SSH_PUBLIC_KEY_PATH%.pub}}" "${DEV_N_NAME}@${WG_SERVER_IP}"
 ```
 
 Use cmux's tabbed agent panels, vertical splits, **glow rings**, and macOS **notification rings** to orchestrate remote agents (Claude Code, Codex, Gemini) with real-time visual alerts when an agent is waiting for input. Each tab is a live SSH session into your own UNIX account on the VM — your panes, your shell, your agents, nobody else's.
 
-> cmux is a **local** macOS app; nothing is installed server-side for it. The VM just needs to be reachable over the VPN (it is, by default, on `10.200.200.1`).
+> cmux is a **local** macOS app; nothing is installed server-side for it. The VM just needs to be reachable over the VPN at `${WG_SERVER_IP}`.
 
 ---
 
@@ -138,11 +138,11 @@ Each shared workstation provisions the **MultiLLM gateway** plus a **per-user us
 The AI CLIs log token usage locally, per UNIX user (`~/.claude`, `~/.codex`, `~/.gemini`). A `systemd` timer runs a collector **as each developer** (mirroring the `code-server@%i` pattern), reads that developer's local stats, and pushes a daily snapshot to the gateway tagged with the developer (`tenant_id`) and the LLM account label. Because each developer keeps using their own logins, nothing about their workflow changes — and **no prompt content is ever collected**, only token counts and a best-effort account label.
 
 ```
- devuser ─ multillm-collector@devuser.timer ─┐
- adi     ─ multillm-collector@adi.timer ──────┤ POST /api/usage/ingest
- royce   ─ multillm-collector@royce.timer ────┘        │
+ ${ADMIN_USERNAME} ─ multillm-collector@${ADMIN_USERNAME}.timer ─┐
+ ${DEV_2_NAME}     ─ multillm-collector@${DEV_2_NAME}.timer ─────┤ POST /api/usage/ingest
+ ${DEV_3_NAME}     ─ multillm-collector@${DEV_3_NAME}.timer ─────┘        │
                                                        ▼
-                                   multillm-gateway.service (10.200.200.1:8080)
+                                   multillm-gateway.service (${WG_SERVER_IP}:${MULTILLM_GATEWAY_PORT})
                                    team_usage table  →  GET /api/team-usage  →  /team
 ```
 
@@ -154,8 +154,8 @@ The AI CLIs log token usage locally, per UNIX user (`~/.claude`, `~/.codex`, `~/
 - **Team dashboard** — per-developer and per-account token + cost rollups, backend breakdown, and over-budget flags:
 
   ```
-  http://10.200.200.1:8080/team          # multi-user usage
-  http://10.200.200.1:8080/dashboard     # full gateway dashboard
+  http://${WG_SERVER_IP}:${MULTILLM_GATEWAY_PORT}/team          # multi-user usage
+  http://${WG_SERVER_IP}:${MULTILLM_GATEWAY_PORT}/dashboard     # full gateway dashboard
   ```
 
 - **`usage-report` CLI** — terminal-side rollup at `/usr/local/bin/usage-report` for
@@ -177,10 +177,11 @@ The AI CLIs log token usage locally, per UNIX user (`~/.claude`, `~/.codex`, `~/
 
 ```bash
 INSTALL_MULTILLM_GATEWAY=true       # set false to skip monitoring entirely
-MULTILLM_GATEWAY_PORT=8080          # gateway / dashboard port (WG-only)
+MULTILLM_GATEWAY_PORT=<PORT>        # gateway / dashboard port (WG-only)
 MULTILLM_COLLECT_INTERVAL_MIN=15    # how often each collector reports
-MULTILLM_USER_BUDGETS="adi=5,royce=10"   # optional per-user daily USD caps → over_budget flag
+MULTILLM_USER_BUDGETS="${DEV_2_NAME}=5,${DEV_3_NAME}=10"   # optional per-user daily USD caps
 MULTILLM_INSTALL_SOURCE=/opt/multillm    # pip target: synced source (default), PyPI spec, or git URL
+MULTILLM_SOURCE_PATH=../multillm          # local source copied into /opt/multillm
 ```
 
 ---
@@ -364,7 +365,8 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | Connection resilience — mosh, `loginctl` linger, sshd keepalive | ✅ Implemented |
 | Memory palace (`.memory-palace/` + `palace` CLI) | ✅ Implemented |
 | Hard per-tenant memory enforcement in the gateway | 🔭 Roadmap (Phase 2, multillm-side) |
-| Live multi-agent status board on the `:80` dashboard | 🔭 Roadmap (next) |
+| Live multi-agent status board (`/agents.html`, `agent-status` timer) | ✅ Implemented |
+| Project-status surface — per-project git state + active agents | ✅ Implemented |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
 

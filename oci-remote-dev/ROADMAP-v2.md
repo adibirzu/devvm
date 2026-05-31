@@ -24,11 +24,15 @@ The substrate that makes everything else survivable, shipped first:
   `loginctl enable-linger`, mosh, and sshd keepalive back this up.
 - ✅ **Memory palace** — `.memory-palace/` structured rooms + `palace` CLI so humans
   and agents reload full project context after a disconnect or fresh session.
-- ✅ **Status hook** — `agentctl ls --json` exposes live agent state for a future
-  visibility board.
+- ✅ **Multi-agent status board** — `/agents.html` (fed by `agent-status` on a 15s
+  timer) shows agents × project × state × 24h LLM cost across all developers: the
+  AgentsRoom "room" view for Linux.
+- ✅ **Project-status surface** — `project-status` (30s timer → `projects.json`) joins
+  per-project git state (branch, clean/dirty, ahead/behind, last commit) with the
+  agents working in it; rendered as a Projects section on the board.
 
-**Next on this track:** a live **multi-agent status board** on the `:80` dashboard
-(agents × projects × state × recent LLM cost) — the AgentsRoom "room" view for Linux.
+**Next on this track:** persist tmux sessions across VM reboots (tmux-resurrect /
+continuum), and a mobile-friendly view of the board.
 
 ---
 

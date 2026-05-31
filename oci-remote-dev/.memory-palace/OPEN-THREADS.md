@@ -15,7 +15,8 @@ this brings the experience to the VPN-reachable Linux VM.
 - [x] Live multi-agent status board — `agent-status` aggregator + `/agents.html`
       board page + 15s timer (`agentctl ls --json` → `agents.json`). Shows agents ×
       projects × state × 24h LLM cost across all developers.
-- [ ] Project-status surface: per-project git state alongside active agents.
+- [x] Project-status surface: `project-status` aggregator + Projects section on the
+      board — per-project git state (branch/dirty/ahead-behind/last commit) × active agents.
 
 ## Next candidates
 - [ ] Phase 3 proper: central MCP tool-registry + guardrail policy (multillm-side
