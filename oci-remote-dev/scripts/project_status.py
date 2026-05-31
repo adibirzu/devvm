@@ -60,7 +60,14 @@ def parse_branch_header(line: str) -> Dict[str, Any]:
 def parse_status(text: str) -> Dict[str, Any]:
     """Parse full `git status -b --porcelain` output into a compact state dict."""
     lines = text.splitlines()
-    state = {"branch": "?", "ahead": 0, "behind": 0, "dirty": 0, "untracked": 0, "clean": True}
+    state = {
+        "branch": "?",
+        "ahead": 0,
+        "behind": 0,
+        "dirty": 0,
+        "untracked": 0,
+        "clean": True,
+    }
     if not lines:
         return state
     state.update(parse_branch_header(lines[0]))
@@ -95,25 +102,34 @@ def merge_projects(
         agents = sessions_by_dir.get(d, [])
         git = git_states.get(d)
         name = agents[0]["project"] if agents else Path(d).name
-        projects.append({
-            "project": name,
-            "dir": d,
-            "git": git,                       # None if not a git repo
-            "active_agents": [
-                {"user": a.get("user", "?"), "agent": a.get("agent", "?"), "state": a.get("state", "?")}
-                for a in agents
-            ],
-        })
+        projects.append(
+            {
+                "project": name,
+                "dir": d,
+                "git": git,  # None if not a git repo
+                "active_agents": [
+                    {
+                        "user": a.get("user", "?"),
+                        "agent": a.get("agent", "?"),
+                        "state": a.get("state", "?"),
+                    }
+                    for a in agents
+                ],
+            }
+        )
     return projects
 
 
 # ── Thin best-effort IO (not unit-tested) ────────────────────────────────────
 
+
 def _run_git(owner: str, repo: str, args: List[str]) -> Optional[str]:
     try:
         r = subprocess.run(
             ["runuser", "-u", owner, "--", "git", "-C", repo, *args],
-            capture_output=True, text=True, timeout=8,
+            capture_output=True,
+            text=True,
+            timeout=8,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -162,13 +178,17 @@ def build(developers: List[str], home_root: Path) -> Dict[str, Any]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    p = argparse.ArgumentParser(description="Aggregate per-project git state + active agents.")
+    p = argparse.ArgumentParser(
+        description="Aggregate per-project git state + active agents."
+    )
     p.add_argument("--developers", default="")
     p.add_argument("--home-root", default="/home")
     p.add_argument("--out", default="")
     args = p.parse_args(argv)
     home_root = Path(args.home_root)
-    devs = [d for d in args.developers.split(",") if d] or discover_developers(home_root)
+    devs = [d for d in args.developers.split(",") if d] or discover_developers(
+        home_root
+    )
     board = build(devs, home_root)
     out = json.dumps(board, indent=2)
     if args.out:

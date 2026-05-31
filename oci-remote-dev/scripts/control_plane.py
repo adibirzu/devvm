@@ -40,6 +40,7 @@ _SSH_PREFIXES = ("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-")
 
 # ── Pure validation ──────────────────────────────────────────────────────────
 
+
 def validate_developer_request(body: Dict[str, Any]) -> Tuple[bool, List[str]]:
     errs: List[str] = []
     name = str(body.get("name", ""))
@@ -47,11 +48,15 @@ def validate_developer_request(body: Dict[str, Any]) -> Tuple[bool, List[str]]:
         errs.append("invalid name (Linux-safe: ^[a-z_][a-z0-9_-]{0,31}$)")
     key = str(body.get("ssh_key", ""))
     if not key.startswith(_SSH_PREFIXES):
-        errs.append("ssh_key must be a valid public key (ssh-rsa/ssh-ed25519/ecdsa-sha2-)")
+        errs.append(
+            "ssh_key must be a valid public key (ssh-rsa/ssh-ed25519/ecdsa-sha2-)"
+        )
     return (not errs), errs
 
 
-def parse_budgets_request(body: Dict[str, Any]) -> Tuple[bool, Dict[str, float], List[str]]:
+def parse_budgets_request(
+    body: Dict[str, Any],
+) -> Tuple[bool, Dict[str, float], List[str]]:
     """Accept {"budgets": {"adi": 5, ...}} or a flat {"adi": 5, ...}."""
     raw = body.get("budgets", body) if isinstance(body, dict) else {}
     out: Dict[str, float] = {}
@@ -86,24 +91,36 @@ def authorize(ctx: Dict[str, Any], deps: Dict[str, Any]) -> bool:
 
 # ── Router (pure) ────────────────────────────────────────────────────────────
 
-def dispatch(method: str, path: str, handlers: Dict[Tuple[str, str], Handler],
-             deps: Dict[str, Any], ctx: Optional[Dict[str, Any]] = None) -> Tuple[int, Any]:
+
+def dispatch(
+    method: str,
+    path: str,
+    handlers: Dict[Tuple[str, str], Handler],
+    deps: Dict[str, Any],
+    ctx: Optional[Dict[str, Any]] = None,
+) -> Tuple[int, Any]:
     ctx = ctx or {}
     # Dynamic route: DELETE /developers/<name>
     if method == "DELETE" and path.startswith("/developers/"):
-        name = path[len("/developers/"):]
+        name = path[len("/developers/") :]
         return _guarded(h_delete_developer, deps, {**ctx, "name": name})
     handler = handlers.get((method, path))
     if handler is None:
         known = any(p == path for (_, p) in handlers) or path.startswith("/developers/")
-        return (405, {"error": "method not allowed"}) if known else (404, {"error": "not found", "path": path})
+        return (
+            (405, {"error": "method not allowed"})
+            if known
+            else (404, {"error": "not found", "path": path})
+        )
     try:
         return handler(deps, ctx)
     except Exception as e:  # never leak a stack trace
         return 500, {"error": "handler failed", "detail": str(e)[:200]}
 
 
-def _guarded(handler: Handler, deps: Dict[str, Any], ctx: Dict[str, Any]) -> Tuple[int, Any]:
+def _guarded(
+    handler: Handler, deps: Dict[str, Any], ctx: Dict[str, Any]
+) -> Tuple[int, Any]:
     try:
         return handler(deps, ctx)
     except Exception as e:
@@ -116,11 +133,25 @@ def _ok(body: Any) -> Tuple[int, Any]:
 
 # ── Handlers ─────────────────────────────────────────────────────────────────
 
-def h_healthz(deps, ctx): return _ok({"status": "ok", "service": "control-plane"})
-def h_fleet_status(deps, ctx): return _ok(deps["fleet_status"]())
-def h_developers(deps, ctx): return _ok({"developers": deps["developers"]()})
-def h_services(deps, ctx): return _ok({"services": deps["services"]()})
-def h_pending(deps, ctx): return _ok({"pending": deps["pending"]()})
+
+def h_healthz(deps, ctx):
+    return _ok({"status": "ok", "service": "control-plane"})
+
+
+def h_fleet_status(deps, ctx):
+    return _ok(deps["fleet_status"]())
+
+
+def h_developers(deps, ctx):
+    return _ok({"developers": deps["developers"]()})
+
+
+def h_services(deps, ctx):
+    return _ok({"services": deps["services"]()})
+
+
+def h_pending(deps, ctx):
+    return _ok({"pending": deps["pending"]()})
 
 
 def h_post_developers(deps, ctx) -> Tuple[int, Any]:
@@ -130,13 +161,21 @@ def h_post_developers(deps, ctx) -> Tuple[int, Any]:
     ok, errs = validate_developer_request(body)
     if not ok:
         return 422, {"error": "validation failed", "details": errs}
-    change = {"op": "add", "name": body["name"], "ssh_key": body.get("ssh_key", ""),
-              "wg_ip": body.get("wg_ip"), "code_server_port": body.get("code_server_port"),
-              "github_user": body.get("github_user")}
+    change = {
+        "op": "add",
+        "name": body["name"],
+        "ssh_key": body.get("ssh_key", ""),
+        "wg_ip": body.get("wg_ip"),
+        "code_server_port": body.get("code_server_port"),
+        "github_user": body.get("github_user"),
+    }
     deps["enqueue"](change)
     deps["audit"]({"action": "queue_add_developer", "name": body["name"]})
-    return 202, {"status": "queued", "change": change,
-                 "note": "Apply with: ./scripts/deploy.sh --profile <p> --yes (materializes pending changes)"}
+    return 202, {
+        "status": "queued",
+        "change": change,
+        "note": "Apply with: ./scripts/deploy.sh --profile <p> --yes (materializes pending changes)",
+    }
 
 
 def h_delete_developer(deps, ctx) -> Tuple[int, Any]:
@@ -148,8 +187,11 @@ def h_delete_developer(deps, ctx) -> Tuple[int, Any]:
     change = {"op": "remove", "name": name}
     deps["enqueue"](change)
     deps["audit"]({"action": "queue_remove_developer", "name": name})
-    return 202, {"status": "queued", "change": change,
-                 "note": "Account removal is never automatic; an admin reviews the queue before applying."}
+    return 202, {
+        "status": "queued",
+        "change": change,
+        "note": "Account removal is never automatic; an admin reviews the queue before applying.",
+    }
 
 
 def h_post_budgets(deps, ctx) -> Tuple[int, Any]:
@@ -161,8 +203,14 @@ def h_post_budgets(deps, ctx) -> Tuple[int, Any]:
     spec = budgets_to_spec(budgets)
     deps["set_budgets"](spec)
     deps["audit"]({"action": "set_budgets", "spec": spec})
-    return _ok({"status": "applied", "budgets": budgets, "spec": spec,
-                "note": "Live on the board within ~15s (agent-status reads /etc/agent-os/budgets)."})
+    return _ok(
+        {
+            "status": "applied",
+            "budgets": budgets,
+            "spec": spec,
+            "note": "Live on the board within ~15s (agent-status reads /etc/agent-os/budgets).",
+        }
+    )
 
 
 HANDLERS: Dict[Tuple[str, str], Handler] = {
@@ -221,26 +269,49 @@ def _read_pending() -> List[Dict[str, Any]]:
 
 def _fleet_status(gateway: str, home_root: str) -> Dict[str, Any]:
     try:
-        out = subprocess.run(["agent-status", "--home-root", home_root, "--gateway", gateway],
-                             capture_output=True, text=True, timeout=20)
-        return json.loads(out.stdout) if out.returncode == 0 and out.stdout.strip() else {"developers": [], "totals": {}}
+        out = subprocess.run(
+            ["agent-status", "--home-root", home_root, "--gateway", gateway],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        return (
+            json.loads(out.stdout)
+            if out.returncode == 0 and out.stdout.strip()
+            else {"developers": [], "totals": {}}
+        )
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
         return {"developers": [], "totals": {}, "error": "agent-status unavailable"}
 
 
 def _developers(home_root: str) -> List[Dict[str, Any]]:
     root = Path(home_root)
-    return [{"name": p.name, "home": str(p)} for p in sorted(root.iterdir())
-            if (p / ".agentctl").is_dir()] if root.is_dir() else []
+    return (
+        [
+            {"name": p.name, "home": str(p)}
+            for p in sorted(root.iterdir())
+            if (p / ".agentctl").is_dir()
+        ]
+        if root.is_dir()
+        else []
+    )
 
 
 def _services() -> List[Dict[str, str]]:
-    units = ["multillm-gateway.service", "agent-status.timer", "project-status.timer",
-             "dev-dashboard.service", "control-plane.service", "agentctl-restore.service"]
+    units = [
+        "multillm-gateway.service",
+        "agent-status.timer",
+        "project-status.timer",
+        "dev-dashboard.service",
+        "control-plane.service",
+        "agentctl-restore.service",
+    ]
     out = []
     for u in units:
         try:
-            r = subprocess.run(["systemctl", "is-active", u], capture_output=True, text=True, timeout=5)
+            r = subprocess.run(
+                ["systemctl", "is-active", u], capture_output=True, text=True, timeout=5
+            )
             state = (r.stdout or r.stderr).strip() or "unknown"
         except (OSError, subprocess.SubprocessError):
             state = "unknown"
@@ -257,7 +328,9 @@ def build_deps(gateway: str, home_root: str) -> Dict[str, Any]:
         "admin_token": _read_admin_token,
         "enqueue": lambda change: _append_jsonl(PENDING_FILE, change),
         "audit": lambda entry: _append_jsonl(AUDIT_FILE, entry),
-        "set_budgets": lambda spec: BUDGETS_FILE.write_text(spec + "\n", encoding="utf-8"),
+        "set_budgets": lambda spec: BUDGETS_FILE.write_text(
+            spec + "\n", encoding="utf-8"
+        ),
     }
 
 
@@ -278,7 +351,9 @@ def make_handler(deps: Dict[str, Any]):
             return {"headers": headers, "body": body}
 
         def _respond(self, method: str) -> None:
-            status, body = dispatch(method, self.path.split("?")[0], HANDLERS, deps, self._ctx())
+            status, body = dispatch(
+                method, self.path.split("?")[0], HANDLERS, deps, self._ctx()
+            )
             payload = json.dumps(body, indent=2).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
@@ -286,20 +361,32 @@ def make_handler(deps: Dict[str, Any]):
             self.end_headers()
             self.wfile.write(payload)
 
-        def do_GET(self): self._respond("GET")        # noqa: N802
-        def do_POST(self): self._respond("POST")      # noqa: N802
-        def do_DELETE(self): self._respond("DELETE")  # noqa: N802
+        def do_GET(self):
+            self._respond("GET")  # noqa: N802
+
+        def do_POST(self):
+            self._respond("POST")  # noqa: N802
+
+        def do_DELETE(self):
+            self._respond("DELETE")  # noqa: N802
+
     return CP
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    p = argparse.ArgumentParser(description="Fleet control-plane API (read + queued writes).")
+    p = argparse.ArgumentParser(
+        description="Fleet control-plane API (read + queued writes)."
+    )
     p.add_argument("--host", default=os.environ.get("CP_HOST", "10.200.200.1"))
     p.add_argument("--port", type=int, default=int(os.environ.get("CP_PORT", "8082")))
-    p.add_argument("--gateway", default=os.environ.get("CP_GATEWAY", "http://10.200.200.1:8080"))
+    p.add_argument(
+        "--gateway", default=os.environ.get("CP_GATEWAY", "http://10.200.200.1:8080")
+    )
     p.add_argument("--home-root", default="/home")
     args = p.parse_args(argv)
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(build_deps(args.gateway, args.home_root)))
+    server = ThreadingHTTPServer(
+        (args.host, args.port), make_handler(build_deps(args.gateway, args.home_root))
+    )
     print(f"control-plane listening on http://{args.host}:{args.port}", file=sys.stderr)
     try:
         server.serve_forever()

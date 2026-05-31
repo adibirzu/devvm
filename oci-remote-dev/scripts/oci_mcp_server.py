@@ -26,20 +26,37 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "oci_list_compartments",
         "description": "List compartments in the tenancy (read-only).",
-        "inputSchema": {"type": "object", "properties": {
-            "compartment_id": {"type": "string", "description": "Parent compartment OCID (default: tenancy root)"}}},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "compartment_id": {
+                    "type": "string",
+                    "description": "Parent compartment OCID (default: tenancy root)",
+                }
+            },
+        },
     },
     {
         "name": "oci_list_instances",
         "description": "List compute instances in a compartment (read-only).",
-        "inputSchema": {"type": "object", "required": ["compartment_id"], "properties": {
-            "compartment_id": {"type": "string", "description": "Compartment OCID"}}},
+        "inputSchema": {
+            "type": "object",
+            "required": ["compartment_id"],
+            "properties": {
+                "compartment_id": {"type": "string", "description": "Compartment OCID"}
+            },
+        },
     },
     {
         "name": "oci_get_instance",
         "description": "Get a compute instance by OCID (read-only).",
-        "inputSchema": {"type": "object", "required": ["instance_id"], "properties": {
-            "instance_id": {"type": "string", "description": "Instance OCID"}}},
+        "inputSchema": {
+            "type": "object",
+            "required": ["instance_id"],
+            "properties": {
+                "instance_id": {"type": "string", "description": "Instance OCID"}
+            },
+        },
     },
     {
         "name": "oci_list_regions",
@@ -50,8 +67,12 @@ TOOLS: List[Dict[str, Any]] = [
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
 # Read-only verb allowlist — build_oci_command will only ever emit these.
-_READONLY_VERBS = {("iam", "compartment", "list"), ("compute", "instance", "list"),
-                   ("compute", "instance", "get"), ("iam", "region-subscription", "list")}
+_READONLY_VERBS = {
+    ("iam", "compartment", "list"),
+    ("compute", "instance", "list"),
+    ("compute", "instance", "get"),
+    ("iam", "region-subscription", "list"),
+}
 
 
 def build_oci_command(tool: str, args: Dict[str, Any], profile: str) -> List[str]:
@@ -90,7 +111,9 @@ def build_oci_command(tool: str, args: Dict[str, Any], profile: str) -> List[str
     return cmd
 
 
-def run_oci(tool: str, args: Dict[str, Any], profile: str, timeout: int = 30) -> Tuple[bool, str]:
+def run_oci(
+    tool: str, args: Dict[str, Any], profile: str, timeout: int = 30
+) -> Tuple[bool, str]:
     """Execute a read-only OCI tool. Returns (ok, text). IO; not unit-tested."""
     try:
         cmd = build_oci_command(tool, args, profile)
@@ -105,15 +128,22 @@ def run_oci(tool: str, args: Dict[str, Any], profile: str, timeout: int = 30) ->
     return True, r.stdout.strip() or "{}"
 
 
-def handle_message(msg: Dict[str, Any], runner: Callable[[str, Dict[str, Any]], Tuple[bool, str]]) -> Optional[Dict[str, Any]]:
+def handle_message(
+    msg: Dict[str, Any], runner: Callable[[str, Dict[str, Any]], Tuple[bool, str]]
+) -> Optional[Dict[str, Any]]:
     """Process one JSON-RPC message; return a response dict, or None for notifications."""
     method = msg.get("method")
     mid = msg.get("id")
     if method == "initialize":
-        return {"jsonrpc": "2.0", "id": mid, "result": {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {"tools": {}},
-            "serverInfo": SERVER_INFO}}
+        return {
+            "jsonrpc": "2.0",
+            "id": mid,
+            "result": {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {"tools": {}},
+                "serverInfo": SERVER_INFO,
+            },
+        }
     if method == "ping":
         return {"jsonrpc": "2.0", "id": mid, "result": {}}
     if method == "tools/list":
@@ -122,19 +152,32 @@ def handle_message(msg: Dict[str, Any], runner: Callable[[str, Dict[str, Any]], 
         params = msg.get("params", {}) or {}
         name = params.get("name", "")
         if name not in TOOL_NAMES:
-            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": f"unknown tool {name}"}}
+            return {
+                "jsonrpc": "2.0",
+                "id": mid,
+                "error": {"code": -32602, "message": f"unknown tool {name}"},
+            }
         ok, text = runner(name, params.get("arguments", {}) or {})
-        return {"jsonrpc": "2.0", "id": mid, "result": {
-            "content": [{"type": "text", "text": text}], "isError": not ok}}
+        return {
+            "jsonrpc": "2.0",
+            "id": mid,
+            "result": {"content": [{"type": "text", "text": text}], "isError": not ok},
+        }
     if method and method.startswith("notifications/"):
         return None  # notifications get no response
     if mid is not None:
-        return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"method not found: {method}"}}
+        return {
+            "jsonrpc": "2.0",
+            "id": mid,
+            "error": {"code": -32601, "message": f"method not found: {method}"},
+        }
     return None
 
 
 def main() -> int:
-    profile = os.environ.get("OCI_CLI_PROFILE", os.environ.get("OCI_PROFILE", "DEFAULT"))
+    profile = os.environ.get(
+        "OCI_CLI_PROFILE", os.environ.get("OCI_PROFILE", "DEFAULT")
+    )
 
     def runner(name: str, args: Dict[str, Any]) -> Tuple[bool, str]:
         return run_oci(name, args, profile)

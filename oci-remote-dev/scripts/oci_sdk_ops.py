@@ -49,17 +49,25 @@ def _read_deployment_info(path: Path) -> Dict[str, str]:
     return data
 
 
-def _sdk_config(profile: str, config_file: Path, region: Optional[str]) -> Dict[str, str]:
+def _sdk_config(
+    profile: str, config_file: Path, region: Optional[str]
+) -> Dict[str, str]:
     cfg = oci.config.from_file(file_location=str(config_file), profile_name=profile)
     if region:
         cfg["region"] = region
     return cfg
 
 
-def _resolve_tenancy_id(args: argparse.Namespace, env_data: Dict[str, str], cfg: Dict[str, str]) -> str:
-    tenancy_id = args.tenancy_id or env_data.get("OCI_TENANCY_OCID") or cfg.get("tenancy")
+def _resolve_tenancy_id(
+    args: argparse.Namespace, env_data: Dict[str, str], cfg: Dict[str, str]
+) -> str:
+    tenancy_id = (
+        args.tenancy_id or env_data.get("OCI_TENANCY_OCID") or cfg.get("tenancy")
+    )
     if not tenancy_id:
-        raise ValueError("Tenancy OCID is required (arg --tenancy-id, .env, or OCI config).")
+        raise ValueError(
+            "Tenancy OCID is required (arg --tenancy-id, .env, or OCI config)."
+        )
     return tenancy_id
 
 
@@ -88,7 +96,9 @@ def _emit(payload: Dict[str, Any]) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
-def cmd_profile_check(args: argparse.Namespace, cfg: Dict[str, str], env_data: Dict[str, str]) -> int:
+def cmd_profile_check(
+    args: argparse.Namespace, cfg: Dict[str, str], env_data: Dict[str, str]
+) -> int:
     tenancy_id = _resolve_tenancy_id(args, env_data, cfg)
     identity = oci.identity.IdentityClient(cfg)
     region_subs = identity.list_region_subscriptions(tenancy_id=tenancy_id).data
@@ -161,7 +171,11 @@ def cmd_instance_action(
     if not already_target:
         compute.instance_action(instance_id=instance_id, action=action)
 
-    after = _wait_for_state(compute, instance_id, target_state, args.wait_timeout) if args.wait else _get_instance(compute, instance_id)
+    after = (
+        _wait_for_state(compute, instance_id, target_state, args.wait_timeout)
+        if args.wait
+        else _get_instance(compute, instance_id)
+    )
     _emit(
         {
             "ok": True,
@@ -213,11 +227,21 @@ def cmd_instance_ip(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="OCI Python SDK ops helper")
-    parser.add_argument("--profile", default=None, help="OCI profile name (default: OCI_PROFILE/.env/DEFAULT)")
-    parser.add_argument("--config-file", default="~/.oci/config", help="Path to OCI config file")
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="OCI profile name (default: OCI_PROFILE/.env/DEFAULT)",
+    )
+    parser.add_argument(
+        "--config-file", default="~/.oci/config", help="Path to OCI config file"
+    )
     parser.add_argument("--region", default=None, help="Override OCI region")
     parser.add_argument("--env-file", default=".env", help="Path to env file")
-    parser.add_argument("--deployment-info", default="configs/deployment-info.txt", help="Path to deployment info file")
+    parser.add_argument(
+        "--deployment-info",
+        default="configs/deployment-info.txt",
+        help="Path to deployment info file",
+    )
     parser.add_argument("--tenancy-id", default=None, help="Tenancy OCID override")
 
     sub = parser.add_subparsers(dest="command", required=True)
@@ -230,12 +254,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_start = sub.add_parser("instance-start", help="Start instance")
     p_start.add_argument("--instance-id", default=None, help="Instance OCID")
     p_start.add_argument("--wait", action="store_true", help="Wait for target state")
-    p_start.add_argument("--wait-timeout", type=int, default=900, help="Wait timeout in seconds")
+    p_start.add_argument(
+        "--wait-timeout", type=int, default=900, help="Wait timeout in seconds"
+    )
 
     p_stop = sub.add_parser("instance-stop", help="Stop instance")
     p_stop.add_argument("--instance-id", default=None, help="Instance OCID")
     p_stop.add_argument("--wait", action="store_true", help="Wait for target state")
-    p_stop.add_argument("--wait-timeout", type=int, default=900, help="Wait timeout in seconds")
+    p_stop.add_argument(
+        "--wait-timeout", type=int, default=900, help="Wait timeout in seconds"
+    )
 
     p_ip = sub.add_parser("instance-ip", help="Get instance primary VNIC IPs")
     p_ip.add_argument("--instance-id", default=None, help="Instance OCID")
@@ -258,7 +286,11 @@ def main() -> int:
     args.profile = profile
 
     try:
-        cfg = _sdk_config(profile=profile, config_file=config_file, region=args.region or env_data.get("OCI_REGION"))
+        cfg = _sdk_config(
+            profile=profile,
+            config_file=config_file,
+            region=args.region or env_data.get("OCI_REGION"),
+        )
 
         if args.command == "profile-check":
             return cmd_profile_check(args, cfg, env_data)

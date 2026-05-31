@@ -3,6 +3,8 @@
 What's in flight. **Read this first on reconnect.** Move finished items to `SESSION-LOG.md`.
 
 ## Recently shipped
+- [x] OOTB hardening: LICENSE, requirements{,-test}.txt, Makefile, CI test job + green
+      lint/gate, verify-agent-os post-deploy smoke (live guardrail+notify check).
 - [x] Phase 5 (done): scheduled autonomous agent jobs (`agent-job` + per-user 5-min
       timer; runs claude -p/codex exec; guardrail-gated; completions ring the board).
 - [x] Phase 2 hard tenant enforcement (multillm repo: memory tenant_id filter + gateway

@@ -23,7 +23,11 @@ import sys
 from pathlib import Path
 
 # Resolve the policy engine from the install lib dir (VM) or the sibling script (dev).
-for cand in (os.environ.get("GUARDRAIL_LIB"), "/usr/local/lib/agent-os", str(Path(__file__).resolve().parent)):
+for cand in (
+    os.environ.get("GUARDRAIL_LIB"),
+    "/usr/local/lib/agent-os",
+    str(Path(__file__).resolve().parent),
+):
     if cand and (Path(cand) / "guardrail.py").exists():
         sys.path.insert(0, cand)
         break
@@ -45,7 +49,10 @@ def _summary(tool: str, tool_input: dict) -> str:
 
 def _audit(entry: dict) -> None:
     try:
-        feed = Path(os.environ.get("AGENTCTL_HOME", str(Path.home() / ".agentctl"))) / "guardrail.jsonl"
+        feed = (
+            Path(os.environ.get("AGENTCTL_HOME", str(Path.home() / ".agentctl")))
+            / "guardrail.jsonl"
+        )
         feed.parent.mkdir(parents=True, exist_ok=True)
         with feed.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry) + "\n")
@@ -64,28 +71,42 @@ def main() -> int:
 
     action, reason, rule_id = decide(tool, tool_input, ctx, load_policy())
 
-    _audit({
-        "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "tool": tool, "action": action, "rule": rule_id,
-        "reason": reason, "summary": _summary(tool, tool_input),
-        "session": os.environ.get("AGENTCTL_SESSION", ""),
-    })
+    _audit(
+        {
+            "ts": datetime.datetime.now(datetime.timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "tool": tool,
+            "action": action,
+            "rule": rule_id,
+            "reason": reason,
+            "summary": _summary(tool, tool_input),
+            "session": os.environ.get("AGENTCTL_SESSION", ""),
+        }
+    )
 
     if action in ("deny", "ask"):
         # Ring the board so the user knows an action is blocked / awaiting confirm.
         try:
-            subprocess.run(["agent-notify", f"guardrail {action}: {reason}"],
-                           timeout=5, check=False)
+            subprocess.run(
+                ["agent-notify", f"guardrail {action}: {reason}"],
+                timeout=5,
+                check=False,
+            )
         except (OSError, subprocess.SubprocessError):
             pass
         decision = "deny" if action == "deny" else "ask"
-        print(json.dumps({
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": decision,
-                "permissionDecisionReason": f"[guardrail:{rule_id}] {reason}",
-            }
-        }))
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": decision,
+                        "permissionDecisionReason": f"[guardrail:{rule_id}] {reason}",
+                    }
+                }
+            )
+        )
     # allow → silent (exit 0): do not override Claude's normal permission flow.
     return 0
 

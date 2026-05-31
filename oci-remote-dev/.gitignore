@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+cloud-vm-connection.local.md
 
 # Generated configs with sensitive data
 configs/

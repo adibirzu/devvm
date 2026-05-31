@@ -36,7 +36,7 @@ DEFAULT_TIMEOUT = int(os.environ.get("AGENT_JOB_TIMEOUT", "900"))
 # Non-interactive invocation per agent ("-p" = print/headless mode for Claude Code).
 AGENT_CMD = {
     "claude": ["claude", "-p"],
-    "codex":  ["codex", "exec"],
+    "codex": ["codex", "exec"],
     "gemini": ["gemini", "-p"],
 }
 
@@ -51,13 +51,17 @@ def _now_iso() -> str:
 
 def _parse_iso(ts: str) -> float:
     try:
-        return datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=datetime.timezone.utc).timestamp()
+        return (
+            datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+            .replace(tzinfo=datetime.timezone.utc)
+            .timestamp()
+        )
     except (ValueError, TypeError):
         return 0.0
 
 
 # ── Pure schedule logic ──────────────────────────────────────────────────────
+
 
 def is_due(job: Dict[str, Any], now_epoch: float) -> bool:
     """A job is due if enabled and at least interval_minutes since its last run."""
@@ -80,6 +84,7 @@ def build_agent_argv(agent: str, prompt: str) -> List[str]:
 
 
 # ── IO ───────────────────────────────────────────────────────────────────────
+
 
 def _job_path(name: str) -> Path:
     safe = "".join(c if (c.isalnum() or c in "_.-") else "_" for c in name)
@@ -116,15 +121,22 @@ def run_job(job: Dict[str, Any]) -> int:
     name = job["name"]
     project = job.get("project", str(Path.home()))
     if not Path(project).is_dir():
-        _record_run({"job": name, "status": "error", "detail": f"missing dir {project}"})
+        _record_run(
+            {"job": name, "status": "error", "detail": f"missing dir {project}"}
+        )
         return 1
     argv = build_agent_argv(job.get("agent", "claude"), job["prompt"])
     logfile = JOBS_DIR / f"{_job_path(name).stem}.last.log"
     started = _now_epoch()
     try:
         with logfile.open("w", encoding="utf-8") as out:
-            r = subprocess.run(argv, cwd=project, stdout=out, stderr=subprocess.STDOUT,
-                               timeout=DEFAULT_TIMEOUT)
+            r = subprocess.run(
+                argv,
+                cwd=project,
+                stdout=out,
+                stderr=subprocess.STDOUT,
+                timeout=DEFAULT_TIMEOUT,
+            )
         code = r.returncode
         status = "ok" if code == 0 else "failed"
     except subprocess.TimeoutExpired:
@@ -135,10 +147,22 @@ def run_job(job: Dict[str, Any]) -> int:
     job["last_run"] = _now_iso()
     job["last_status"] = status
     save_job(job)
-    _record_run({"job": name, "status": status, "exit": code, "duration_s": duration, "log": str(logfile)})
+    _record_run(
+        {
+            "job": name,
+            "status": status,
+            "exit": code,
+            "duration_s": duration,
+            "log": str(logfile),
+        }
+    )
     # Surface completion on the board via the existing notification feed.
     try:
-        subprocess.run(["agent-notify", f"job '{name}' {status} ({duration}s)"], timeout=5, check=False)
+        subprocess.run(
+            ["agent-notify", f"job '{name}' {status} ({duration}s)"],
+            timeout=5,
+            check=False,
+        )
     except (OSError, subprocess.SubprocessError):
         pass
     return code
@@ -146,25 +170,37 @@ def run_job(job: Dict[str, Any]) -> int:
 
 # ── Commands ─────────────────────────────────────────────────────────────────
 
+
 def cmd_define(args) -> int:
     job = {
-        "name": args.name, "agent": args.agent, "project": str(Path(args.project).expanduser()),
-        "prompt": args.prompt, "interval_minutes": args.every, "enabled": True, "last_run": "",
+        "name": args.name,
+        "agent": args.agent,
+        "project": str(Path(args.project).expanduser()),
+        "prompt": args.prompt,
+        "interval_minutes": args.every,
+        "enabled": True,
+        "last_run": "",
     }
     save_job(job)
-    print(f"defined job '{args.name}' (agent={args.agent}, every {args.every}m, project={job['project']})")
+    print(
+        f"defined job '{args.name}' (agent={args.agent}, every {args.every}m, project={job['project']})"
+    )
     return 0
 
 
 def cmd_list(args) -> int:
     jobs = load_jobs()
     if not jobs:
-        print("(no jobs defined — agent-job define <name> --project <dir> --prompt \"...\")")
+        print(
+            '(no jobs defined — agent-job define <name> --project <dir> --prompt "...")'
+        )
         return 0
     print(f"  {'NAME':<20} {'AGENT':<8} {'EVERY':>7} {'LAST RUN':<22} STATUS")
     for j in jobs:
-        print(f"  {j['name'][:20]:<20} {j.get('agent','?'):<8} {str(j.get('interval_minutes',0))+'m':>7} "
-              f"{j.get('last_run','') or '(never)':<22} {j.get('last_status','-')}")
+        print(
+            f"  {j['name'][:20]:<20} {j.get('agent','?'):<8} {str(j.get('interval_minutes',0))+'m':>7} "
+            f"{j.get('last_run','') or '(never)':<22} {j.get('last_status','-')}"
+        )
     return 0
 
 
@@ -203,19 +239,35 @@ def cmd_remove(args) -> int:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(prog="agent-job", description="Scheduled unattended agent jobs.")
+    parser = argparse.ArgumentParser(
+        prog="agent-job", description="Scheduled unattended agent jobs."
+    )
     sub = parser.add_subparsers(dest="command", required=True)
-    d = sub.add_parser("define"); d.add_argument("name"); d.add_argument("--project", required=True)
-    d.add_argument("--prompt", required=True); d.add_argument("--agent", default="claude")
-    d.add_argument("--every", type=int, default=1440, help="interval in minutes (default daily)")
+    d = sub.add_parser("define")
+    d.add_argument("name")
+    d.add_argument("--project", required=True)
+    d.add_argument("--prompt", required=True)
+    d.add_argument("--agent", default="claude")
+    d.add_argument(
+        "--every", type=int, default=1440, help="interval in minutes (default daily)"
+    )
     sub.add_parser("list")
-    r = sub.add_parser("run"); r.add_argument("name")
+    r = sub.add_parser("run")
+    r.add_argument("name")
     sub.add_parser("tick")
-    lg = sub.add_parser("logs"); lg.add_argument("name")
-    rm = sub.add_parser("remove"); rm.add_argument("name")
+    lg = sub.add_parser("logs")
+    lg.add_argument("name")
+    rm = sub.add_parser("remove")
+    rm.add_argument("name")
     args = parser.parse_args(argv)
-    return {"define": cmd_define, "list": cmd_list, "run": cmd_run,
-            "tick": cmd_tick, "logs": cmd_logs, "remove": cmd_remove}[args.command](args)
+    return {
+        "define": cmd_define,
+        "list": cmd_list,
+        "run": cmd_run,
+        "tick": cmd_tick,
+        "logs": cmd_logs,
+        "remove": cmd_remove,
+    }[args.command](args)
 
 
 if __name__ == "__main__":

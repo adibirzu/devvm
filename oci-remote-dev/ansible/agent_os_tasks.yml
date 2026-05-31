@@ -80,6 +80,15 @@
     group: developers
     mode: '0755'
 
+# --- Post-deploy verification ---
+- name: Agent-OS | Install verify-agent-os (post-deploy smoke + hook check)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/verify.sh"
+    dest: /usr/local/bin/verify-agent-os
+    owner: root
+    group: developers
+    mode: '0755'
+
 # --- Fleet control-plane API (Phase 4) ---
 - name: Agent-OS | Generate the control-plane admin token (first run; root-only)
   ansible.builtin.shell:
