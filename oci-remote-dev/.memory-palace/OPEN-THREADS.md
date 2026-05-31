@@ -3,6 +3,8 @@
 What's in flight. **Read this first on reconnect.** Move finished items to `SESSION-LOG.md`.
 
 ## Recently shipped
+- [x] Phase 5 (done): scheduled autonomous agent jobs (`agent-job` + per-user 5-min
+      timer; runs claude -p/codex exec; guardrail-gated; completions ring the board).
 - [x] Phase 2 hard tenant enforcement (multillm repo: memory tenant_id filter + gateway
       X-MultiLLM-Tenant header + MCP MULTILLM_ENFORCE_TENANT; devvm: context CLI sends tenant).
 - [x] Phase 4 write side: control-plane mutations (admin-token auth, queued account

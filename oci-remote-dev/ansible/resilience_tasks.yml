@@ -87,6 +87,59 @@
     enabled: true
     daemon_reload: true
 
+# --- Scheduled autonomous agent jobs (Phase 5) ---
+- name: Resilience | Install agent-job (scheduled unattended agent jobs)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/agent_job.py"
+    dest: /usr/local/bin/agent-job
+    owner: root
+    group: developers
+    mode: '0755'
+
+- name: Resilience | agent-jobs tick service (runs each developer's due jobs)
+  when: enable_agent_jobs | default(true)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/agent-jobs.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Run each developer's due agent jobs
+      After=network-online.target multillm-gateway.service
+
+      [Service]
+      Type=oneshot
+      # Each tick runs as the developer (their guardrail + identity apply).
+      ExecStart=/bin/bash -c 'for u in {{ developers | map(attribute="name") | join(" ") }}; do runuser -u "$u" -- /usr/local/bin/agent-job tick || true; done'
+
+- name: Resilience | agent-jobs timer (every 5 min)
+  when: enable_agent_jobs | default(true)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/agent-jobs.timer
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Tick scheduled agent jobs
+
+      [Timer]
+      OnBootSec=5min
+      OnUnitActiveSec=5min
+      RandomizedDelaySec=30
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Resilience | Enable + start the agent-jobs timer
+  when: enable_agent_jobs | default(true)
+  ansible.builtin.systemd:
+    name: agent-jobs.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
 - name: Resilience | Sensible tmux defaults for long-lived agent sessions
   ansible.builtin.copy:
     dest: "/home/{{ item.name }}/.tmux.conf"

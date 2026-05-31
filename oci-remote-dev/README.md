@@ -446,6 +446,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | OCI read-only MCP server (read-only verb allowlist) | ✅ Implemented |
 | Read-only fleet control-plane API (VPN-only, `:8082`) | ✅ Implemented |
 | Control-plane mutations — admin-token auth, queued account changes, live budgets | ✅ Implemented |
+| Scheduled autonomous agent jobs (`agent-job`, per-user timer) | ✅ Implemented |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
 
