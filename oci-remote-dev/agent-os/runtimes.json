@@ -1,0 +1,80 @@
+{
+  "_comment": "Pluggable agent-runtime registry (Phase 6 — PAI integration). Defines the governed coding-agent backends the fleet can launch via agentctl / agent-job. One source of truth so adding a runtime is data, not code. Deployed to /opt/agent-os/runtimes.json; validate with `pai-runtimes validate`. Every runtime inherits the PreToolUse guardrail and the per-UNIX-user sandbox — a runtime entry CANNOT opt out of the gate. `gateway_routed` runtimes have their base URL pointed at the shared MultiLLM gateway so usage is tracked per tenant.",
+  "version": 1,
+  "runtimes": [
+    {
+      "name": "claude",
+      "enabled": true,
+      "description": "Anthropic Claude Code CLI.",
+      "kind": "cli",
+      "interactive_template": ["claude"],
+      "exec_template": ["claude", "-p", "{prompt}"],
+      "gateway_routed": true,
+      "gateway_env": "ANTHROPIC_BASE_URL",
+      "guardrail_scope": "default",
+      "agentctl_compatible": true
+    },
+    {
+      "name": "codex",
+      "enabled": true,
+      "description": "OpenAI Codex CLI.",
+      "kind": "cli",
+      "interactive_template": ["codex"],
+      "exec_template": ["codex", "exec", "{prompt}"],
+      "gateway_routed": true,
+      "gateway_env": "OPENAI_BASE_URL",
+      "guardrail_scope": "default",
+      "agentctl_compatible": true
+    },
+    {
+      "name": "gemini",
+      "enabled": true,
+      "description": "Google Gemini CLI.",
+      "kind": "cli",
+      "interactive_template": ["gemini"],
+      "exec_template": ["gemini", "-p", "{prompt}"],
+      "gateway_routed": true,
+      "gateway_env": "GOOGLE_GEMINI_BASE_URL",
+      "guardrail_scope": "default",
+      "agentctl_compatible": true
+    },
+    {
+      "name": "antigravity",
+      "aliases": ["agy"],
+      "enabled": true,
+      "description": "Google Antigravity agentic CLI (AGY). Detected via .antigravitycli/ in the repo. Command path is a placeholder until the principal supplies the exact binary/flags.",
+      "kind": "cli",
+      "interactive_template": ["antigravity"],
+      "exec_template": ["antigravity", "run", "--prompt", "{prompt}"],
+      "gateway_routed": true,
+      "gateway_env": "ANTIGRAVITY_BASE_URL",
+      "guardrail_scope": "default",
+      "agentctl_compatible": true
+    },
+    {
+      "name": "hermes",
+      "enabled": true,
+      "description": "Local Hermes agent runtime. Command path is a placeholder until the principal supplies the exact binary/flags.",
+      "kind": "cli",
+      "interactive_template": ["hermes"],
+      "exec_template": ["hermes", "--task", "{prompt}"],
+      "gateway_routed": true,
+      "gateway_env": "HERMES_BASE_URL",
+      "guardrail_scope": "default",
+      "agentctl_compatible": true
+    },
+    {
+      "name": "nanoclaw",
+      "aliases": ["nano-claw", "openclaw"],
+      "enabled": true,
+      "description": "Lightweight nano-claw / OpenClaw agent. Command path is a placeholder until the principal supplies the exact binary/flags.",
+      "kind": "cli",
+      "interactive_template": ["nanoclaw"],
+      "exec_template": ["nanoclaw", "run", "{prompt}"],
+      "gateway_routed": true,
+      "gateway_env": "NANOCLAW_BASE_URL",
+      "guardrail_scope": "default",
+      "agentctl_compatible": true
+    }
+  ]
+}

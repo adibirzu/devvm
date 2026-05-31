@@ -229,3 +229,35 @@ Phase 1 (observability)  ──►  Phase 2 (context bus)  ──►  Phase 3 (r
 Phase 1 is pure wiring on top of what already exists and should land first. Each phase
 is independently shippable behind its `.env.local` toggle, keeping deploys declarative
 and reversible.
+
+---
+
+## Phase 6 — PAI / Obi Integration (done)
+
+Make the principal's **PAI** (the Algorithm + skills + MEMORY + the *Obi* DA) a
+first-class, portable, privacy-isolated tenant of the fleet. Phases 0–5 built the
+substrate; Phase 6 is the **bridge** — it deploys PAI on top of what exists and
+makes the same Obi available across the principal's own devices.
+
+**Delivered:**
+- ✅ **Per-user PAI deploy** — `pai-bootstrap` clones/updates `~/.claude/PAI` as each
+  developer (0700, never as root, never into `/opt/shared-dev`); Ansible
+  `pai_tasks.yml` gated by `install_pai`.
+- ✅ **Multi-device encrypted MEMORY sync** — `pai-sync` (stdlib) encrypts MEMORY +
+  USER with `age` into a separate PRIVATE repo. Offline-first (commits locally with
+  no remote; reports `no remote`), extends to a cloud remote by config. Hard refusal
+  on empty recipients — never falls back to plaintext.
+- ✅ **Pluggable agent-runtime registry** — `agent-os/runtimes.json` + `pai-runtimes`
+  register Claude/Codex/Gemini + **Antigravity (AGY) / Hermes / nano-claw (OpenClaw)**.
+  Adding a runtime is data, not code. Unknown/disabled runtimes are rejected; all
+  inherit the PreToolUse guardrail and route via the MultiLLM gateway.
+- ✅ **Privacy model** — personal MEMORY is age-encrypted at rest on the shared VM,
+  decrypted only in-session; the age identity can later move to OCI Vault (config).
+- ✅ **Docs + tests** — `docs/PAI-INTEGRATION.md`, `MULTI-DEVICE-SYNC.md`,
+  `AGENT-RUNTIMES.md`; `tests/test_pai_sync.py` + `tests/test_pai_runtime_registry.py`
+  (31 tests). The capability is tracked as a project ISA at `ISA.md`.
+
+**Remaining (small follow-ups):**
+- Wire `pai-runtimes resolve` into `agentctl start <runtime>` / `agent-job` selection.
+- Supply real command templates/flags for Antigravity, Hermes, nano-claw (JSON edit).
+- Live deploy once VM connection details are wired into `.env.local`.
