@@ -232,9 +232,11 @@ context rm <id>
 - **`--shared`** writes/reads the team `shared` namespace.
 - Reads are public over the VPN; writes send `X-API-Key` (from `/etc/multillm/collector.env`).
 
-> Scoping is a **convention enforced by the client** today — all rows share one
-> store. Hard per-tenant enforcement in the gateway is a Phase 2 follow-up
-> (see `ROADMAP-v2.md`).
+> Scoping is now **enforced server-side**: the `context` CLI sends an
+> `X-MultiLLM-Tenant` header (your user / `shared` / none-for-`--all`), and each
+> developer's MCP server runs with `MULTILLM_ENFORCE_TENANT=true` so the gateway tags
+> writes and filters reads by tenant. `user-<you>` is a real ownership boundary, not
+> just a naming convention.
 
 ---
 
@@ -435,7 +437,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | Durable agent sessions (`agentctl`) surviving WG/SSH/internet drops | ✅ Implemented |
 | Connection resilience — mosh, `loginctl` linger, sshd keepalive | ✅ Implemented |
 | Memory palace (`.memory-palace/` + `palace` CLI) | ✅ Implemented |
-| Hard per-tenant memory enforcement in the gateway | 🔭 Roadmap (Phase 2, multillm-side) |
+| Hard per-tenant memory enforcement (X-MultiLLM-Tenant + MCP) | ✅ Implemented |
 | Live multi-agent status board (`/agents.html`, `agent-status` timer) | ✅ Implemented |
 | Project-status surface — per-project git state + active agents | ✅ Implemented |
 | Notification ring — agent-needs-input alerts + browser/phone push | ✅ Implemented |

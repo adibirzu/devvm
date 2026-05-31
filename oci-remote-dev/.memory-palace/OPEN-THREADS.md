@@ -3,6 +3,8 @@
 What's in flight. **Read this first on reconnect.** Move finished items to `SESSION-LOG.md`.
 
 ## Recently shipped
+- [x] Phase 2 hard tenant enforcement (multillm repo: memory tenant_id filter + gateway
+      X-MultiLLM-Tenant header + MCP MULTILLM_ENFORCE_TENANT; devvm: context CLI sends tenant).
 - [x] Phase 4 write side: control-plane mutations (admin-token auth, queued account
       changes, live budgets, audit log).
 - [x] Phase 4 read-only control-plane API (GET /fleet/status, /developers, /fleet/services).

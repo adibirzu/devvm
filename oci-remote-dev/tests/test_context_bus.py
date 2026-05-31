@@ -10,7 +10,22 @@ from scripts.context_bus import (
     format_memory_rows,
     main,
     scope_for,
+    tenant_for,
 )
+
+
+class TestTenant(unittest.TestCase):
+    def test_private_tenant_is_user(self) -> None:
+        self.assertEqual(tenant_for("adi", shared=False), "adi")
+
+    def test_shared_tenant(self) -> None:
+        self.assertEqual(tenant_for("adi", shared=True), SHARED_SCOPE)
+
+    def test_all_scope_no_tenant(self) -> None:
+        self.assertEqual(tenant_for("adi", shared=False, all_scopes=True), "")
+
+    def test_tenant_distinct_per_user(self) -> None:
+        self.assertNotEqual(tenant_for("adi", False), tenant_for("royce", False))
 
 
 class TestScoping(unittest.TestCase):
