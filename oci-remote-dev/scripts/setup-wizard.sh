@@ -15,7 +15,9 @@ NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-ENV_FILE="$PROJECT_DIR/.env"
+# Write to .env.local (git-ignored, sourced as the override by deploy.sh) so real
+# usernames / topology / keys NEVER land in a committed file — safe to share on GitHub.
+ENV_FILE="$PROJECT_DIR/.env.local"
 
 # Detect OCI CLI
 detect_oci_cli() {
