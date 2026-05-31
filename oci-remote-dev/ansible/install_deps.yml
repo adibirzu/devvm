@@ -1,0 +1,79 @@
+---
+# install_deps.yml — install the foundational dependencies the project needs to
+# "properly run" on a bare VM, idempotently, without the blast radius of the full
+# playbook.yml (no per-developer account churn, no firewall changes, no MultiLLM
+# source sync). Safe to run repeatedly.
+#
+# Run from a workstation against the VM:
+#   ansible-playbook -i '<VM_IP>,' -u devuser --private-key ~/.ssh/<key> \
+#     ansible/install_deps.yml --ask-become-pass
+#
+# For the FULL provision (desktops, code-server, gateway, agent-os, PAI), run
+# playbook.yml via deploy.sh instead.
+
+- name: Install missing project dependencies
+  hosts: all
+  become: true
+  vars:
+    node_global_ai_clis:
+      - "@anthropic-ai/claude-code"
+      - "@openai/codex"
+      - "@google/generative-ai-cli"
+    install_ai_clis: true
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install core toolchain (python, build, vpn, encryption, test deps)
+      ansible.builtin.apt:
+        name:
+          - python3-pip
+          - python3-venv
+          - python3-pytest
+          - pipx
+          - build-essential
+          - git
+          - jq
+          - curl
+          - rsync
+          - tmux
+          - mosh
+          - wireguard
+          - wireguard-tools
+          - age            # personal-MEMORY encryption (Phase 6 / pai-sync)
+        state: present
+
+    - name: Ensure pipx path is set up
+      ansible.builtin.command:
+        cmd: pipx ensurepath
+      changed_when: false
+      failed_when: false
+
+    - name: Install AI CLI agents globally (Claude / Codex / Gemini)
+      ansible.builtin.npm:
+        name: "{{ item }}"
+        global: true
+        state: present
+      loop: "{{ node_global_ai_clis }}"
+      when: install_ai_clis | default(true)
+      ignore_errors: true
+
+    - name: Report installed versions
+      ansible.builtin.shell: |
+        set +e
+        for b in python3 pip3 pytest age wg node npm claude codex gemini; do
+          if command -v "$b" >/dev/null 2>&1; then
+            printf '%-10s %s\n' "$b" "$($b --version 2>&1 | head -1)"
+          else
+            printf '%-10s MISSING\n' "$b"
+          fi
+        done
+      register: dep_report
+      changed_when: false
+
+    - name: Show dependency report
+      ansible.builtin.debug:
+        var: dep_report.stdout_lines
