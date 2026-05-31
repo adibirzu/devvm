@@ -66,7 +66,7 @@ enforcement (multillm-side: hard tenant scope + deny/confirm on destructive tool
 
 ---
 
-## Phase 1 — Observability & Cost Control (in progress)
+## Phase 1 — Observability & Cost Control (done)
 
 Goal: a fleet-wide view of who/what is spending tokens and where time goes.
 
@@ -101,7 +101,7 @@ control plane rather than bolted onto the static `:80` page.)
 
 ---
 
-## Phase 2 — Shared Agent Memory / Context Bus (in progress)
+## Phase 2 — Shared Agent Memory / Context Bus (done)
 
 Goal: let agents (and humans) share durable, scoped context across sessions and users.
 
@@ -123,12 +123,12 @@ Goal: let agents (and humans) share durable, scoped context across sessions and 
 - ✅ **Toggle** — the bus rides with the gateway (`install_multillm_gateway`); a separate
   `ENABLE_CONTEXT_BUS` flag would be cosmetic since the store *is* the gateway.
 
-**Remaining (multillm-side, cross-repo):**
-- **Hard scope enforcement** — the memory HTTP API + tool layer must accept and filter on
-  `tenant_id` (the column exists; the API still scopes only by free-text `project`). Until
-  then, `user-<name>` is a convention, not a boundary: writes authenticate by the gateway
-  API key, not UNIX identity. This is the one remaining Phase 2 item and it lives in the
-  `multillm` repo, not here.
+- ✅ **Hard scope enforcement (multillm-side, done)** — `multillm` memory store/search/list
+  accept and filter on `tenant_id`; the gateway reads `X-MultiLLM-Tenant`; the per-user MCP
+  server isolates by UNIX user under `MULTILLM_ENFORCE_TENANT` (devvm sets it via the
+  registry). `user-<name>` is now a real ownership boundary. (multillm@5606a62)
+
+**Phase 2 complete.**
 
 **Risk to manage:** scope leakage. Once enforcement lands, writes must be authenticated
 to the calling UNIX user and `shared`-scope writes gated on `developers` membership.
