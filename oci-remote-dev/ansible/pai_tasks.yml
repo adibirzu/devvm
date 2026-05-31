@@ -16,6 +16,39 @@
     state: present
   when: pai_encrypt_memory | default(true)
 
+# Antigravity (AGY) — Google's terminal coding agent; replaces the Gemini CLI as
+# the Google-family runtime. Installs the `agy` binary fleet-wide. Headless auth
+# (agy prints a URL + one-time code over SSH) is done per-user on first run.
+#
+# We deliberately do NOT pipe the installer straight into a shell interpreter.
+# Instead: download to a file, then execute that file. This makes the fetched
+# script auditable on disk, lets an admin inspect/checksum it, and avoids the
+# blind remote-code-execution anti-pattern. Set agy_installer_sha256 to pin it.
+- name: PAI | Fetch the Antigravity (AGY) installer to disk (auditable)
+  ansible.builtin.get_url:
+    url: "{{ agy_installer_url | default('https://antigravity.google/cli/install.sh') }}"
+    dest: /opt/agent-os/agy-install.sh
+    mode: '0750'
+    owner: root
+    group: developers
+    checksum: "{{ ('sha256:' + agy_installer_sha256) if (agy_installer_sha256 | default('')) else omit }}"
+  register: agy_fetch
+  failed_when: false
+  when: install_antigravity | default(true)
+
+- name: PAI | Run the fetched Antigravity installer (only if agy not present)
+  ansible.builtin.command:
+    cmd: /bin/bash /opt/agent-os/agy-install.sh
+    creates: /usr/local/bin/agy
+  environment:
+    ANTIGRAVITY_INSTALL_DIR: /usr/local/bin
+  register: agy_install
+  changed_when: "'installed' in (agy_install.stdout | default('') | lower)"
+  failed_when: false
+  when:
+    - install_antigravity | default(true)
+    - agy_fetch is succeeded
+
 - name: PAI | Library directory for shared agent-runtime data
   ansible.builtin.file:
     path: /opt/agent-os
