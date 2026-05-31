@@ -82,6 +82,8 @@
     <div id="board"><p class="empty">Loading…</p></div>
     <h2 style="margin:2.5rem 0 1rem;">📁 Projects</h2>
     <div id="projects"><p class="empty">Loading…</p></div>
+    <h2 style="margin:2.5rem 0 1rem;">🛡️ Guardrail — recent tool decisions</h2>
+    <div id="guardrail"><p class="empty">Loading…</p></div>
     <footer>
       <button class="ctrl" id="refresh">↻ Refresh</button>
       <button class="ctrl" id="pause">⏸ Pause</button>
@@ -98,9 +100,10 @@
       document.getElementById("totals").innerHTML = `
         <div class="stat ${t.needs_input ? "needs-input" : ""}"><div class="n">${t.needs_input || 0}</div><div class="l">🔔 need input</div></div>
         <div class="stat"><div class="n">${t.running}</div><div class="l">active sessions</div></div>
-        <div class="stat"><div class="n">${t.sessions}</div><div class="l">total sessions</div></div>
+        <div class="stat"><div class="n">${t.blocked || 0}</div><div class="l">🛡️ blocked · 1h</div></div>
         <div class="stat"><div class="n">${fmtCost(t.cost_usd)}</div><div class="l">LLM cost · 24h</div></div>`;
       renderNotifs(data);
+      renderGuardrail(data);
       const board = document.getElementById("board");
       const devs = data.developers || [];
       if (!devs.length) { board.innerHTML = `<p class="empty">No developers found.</p>`; return; }
@@ -164,6 +167,28 @@
             <tr><td>Active agents</td><td>${agents}</td></tr>
           </tbody></table></div>`;
       }).join("");
+    }
+    function renderGuardrail(data) {
+      const g = data.guardrail || { recent: [], denied: 0, asked: 0 };
+      const box = document.getElementById("guardrail");
+      if (!g.recent || !g.recent.length) {
+        box.innerHTML = `<p class="empty">No tool calls blocked or held for confirmation in the last hour.</p>`;
+        return;
+      }
+      const rows = g.recent.map(e => {
+        const cls = e.action === "deny" ? "dead" : "attached";
+        const label = e.action === "deny" ? "DENY" : "ASK";
+        return `<tr>
+          <td data-label="Decision"><span class="pill ${cls}">${label}</span></td>
+          <td data-label="Who">${e.user || ""}</td>
+          <td data-label="Rule">${e.rule || ""}</td>
+          <td data-label="Action">${(e.summary || "").replace(/</g, "&lt;")}</td>
+          <td data-label="When">${e.ts || ""}</td>
+        </tr>`;
+      }).join("");
+      box.innerHTML = `<div class="dev"><table class="sessions">
+        <thead><tr><th>Decision</th><th>Who</th><th>Rule</th><th>Action</th><th>When</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
     }
     async function tick() {
       let ok = false;

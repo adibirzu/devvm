@@ -141,10 +141,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--tool", default="Bash")
     p.add_argument("--input", default="{}", help="tool_input as JSON")
     p.add_argument("--dump-policy", action="store_true", help="Print the default policy as JSON (for /etc/agent-os/policy.json)")
+    p.add_argument("--log", action="store_true", help="Show recent guardrail decisions (audit trail)")
+    p.add_argument("-n", type=int, default=25, help="Number of audit lines with --log")
     args = p.parse_args(argv)
 
     if args.dump_policy:
         print(json.dumps(DEFAULT_POLICY, indent=2))
+        return 0
+
+    if args.log:
+        feed = Path(os.environ.get("AGENTCTL_HOME", str(Path.home() / ".agentctl"))) / "guardrail.jsonl"
+        if not feed.exists():
+            print("(no guardrail decisions logged yet)")
+            return 0
+        lines = feed.read_text(encoding="utf-8", errors="replace").splitlines()[-args.n:]
+        for ln in lines:
+            try:
+                e = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            mark = {"deny": "✗ DENY", "ask": "? ASK", "allow": "· allow"}.get(e.get("action"), e.get("action"))
+            print(f"{e.get('ts','')}  {mark:<8} [{e.get('rule','')}] {e.get('summary','')}")
         return 0
     try:
         ti = json.loads(args.input)
