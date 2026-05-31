@@ -15,10 +15,12 @@
   hosts: all
   become: true
   vars:
+    # Google Gemini CLI is replaced by Antigravity (AGY) as the Google-family
+    # runtime. Antigravity is installed out-of-band (see docs/AGENT-RUNTIMES.md);
+    # set its install command in pai_antigravity_install when known.
     node_global_ai_clis:
       - "@anthropic-ai/claude-code"
       - "@openai/codex"
-      - "@google/generative-ai-cli"
     install_ai_clis: true
 
   tasks:
