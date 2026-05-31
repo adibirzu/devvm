@@ -1,0 +1,49 @@
+---
+# Agent-OS — Phase 3: tool guardrails, MCP tool registry, OCI read-only MCP server.
+# The guardrail is the enforcement point: a Claude Code PreToolUse hook (registered
+# per-user in user_tasks.yml) calls /usr/local/bin/guardrail-hook BEFORE any tool
+# runs, blocking destructive calls and confirming risky ones.
+
+- name: Agent-OS | Library + config directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /usr/local/lib/agent-os, group: root, mode: '0755' }
+    - { path: /etc/agent-os, group: developers, mode: '0755' }
+
+- name: Agent-OS | Install the guardrail policy engine (library)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/guardrail.py"
+    dest: /usr/local/lib/agent-os/guardrail.py
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Agent-OS | Install guardrail CLI + PreToolUse hook
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: developers
+    mode: '0755'
+  loop:
+    - { src: "{{ playbook_dir }}/../scripts/guardrail.py", dest: /usr/local/bin/guardrail }
+    - { src: "{{ playbook_dir }}/../scripts/guardrail_hook.py", dest: /usr/local/bin/guardrail-hook }
+
+- name: Agent-OS | Materialize the default policy for ops to edit (idempotent)
+  ansible.builtin.shell: |
+    set -e
+    if [ ! -f /etc/agent-os/policy.json ]; then
+      /usr/local/bin/guardrail --dump-policy > /etc/agent-os/policy.json
+      chgrp developers /etc/agent-os/policy.json
+      chmod 0664 /etc/agent-os/policy.json
+      echo created
+    else
+      echo present
+    fi
+  args:
+    creates: /etc/agent-os/policy.json

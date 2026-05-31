@@ -1027,6 +1027,7 @@ class MultiCloudDeployer:
             "multillm_install_source": self._get_env("MULTILLM_INSTALL_SOURCE", "/opt/multillm"),
             "multillm_source_path": self._get_env("MULTILLM_SOURCE_PATH", "../multillm"),
             "install_resilience_layer": self._env_bool("INSTALL_RESILIENCE_LAYER", True),
+            "install_agent_os": self._env_bool("INSTALL_AGENT_OS", True),
         }
 
         extra_vars_file = configs_dir / "ansible_vars.json"

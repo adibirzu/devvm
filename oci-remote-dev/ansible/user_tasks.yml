@@ -140,3 +140,33 @@
     PY
   register: notify_hook
   changed_when: "'added' in notify_hook.stdout"
+
+- name: Register guardrail PreToolUse hook (blocks destructive tool calls)
+  become_user: "{{ dev.name }}"
+  when: install_agent_os | default(true)
+  ansible.builtin.shell: |
+    set -e
+    HOOKS="$HOME/.claude/hooks.json"
+    mkdir -p "$HOME/.claude"
+    python3 - "$HOOKS" <<'PY'
+    import json, os, sys
+    path = sys.argv[1]
+    data = {}
+    if os.path.exists(path):
+        try:
+            data = json.load(open(path))
+        except Exception:
+            data = {}
+    arr = data.setdefault("PreToolUse", [])
+    # Apply to the tools we gate; "matcher" empty means all tools in Claude Code.
+    entry = {"matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|Read",
+             "hooks": [{"type": "command", "command": "/usr/local/bin/guardrail-hook"}]}
+    if not any("guardrail-hook" in json.dumps(e) for e in arr):
+        arr.append(entry)
+        json.dump(data, open(path, "w"), indent=2)
+        print("added")
+    else:
+        print("present")
+    PY
+  register: guardrail_hook
+  changed_when: "'added' in guardrail_hook.stdout"
