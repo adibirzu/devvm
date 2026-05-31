@@ -7,7 +7,9 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from scripts.agent_status import (
     apply_notifications,
+    evaluate_budget_status,
     merge_board,
+    parse_budgets,
     parse_meta_dir,
     recent_guardrail,
     recent_notifications,
@@ -154,6 +156,27 @@ class TestGuardrailAudit(unittest.TestCase):
     def test_summarize_empty(self) -> None:
         s = summarize_guardrail({})
         self.assertEqual((s["denied"], s["asked"], s["recent"]), (0, 0, []))
+
+
+class TestBudgetStatus(unittest.TestCase):
+    def test_parse_budgets(self) -> None:
+        self.assertEqual(parse_budgets("adi=5, royce=10"), {"adi": 5.0, "royce": 10.0})
+
+    def test_flags_over_budget(self) -> None:
+        devs = [{"name": "adi", "cost_usd_24h": 6.5}, {"name": "royce", "cost_usd_24h": 1.0}]
+        over = evaluate_budget_status(devs, "adi=5,royce=10")
+        self.assertEqual(over, 1)
+        self.assertTrue(devs[0]["budget"]["over"])
+        self.assertFalse(devs[1]["budget"]["over"])
+
+    def test_no_budget_means_none(self) -> None:
+        devs = [{"name": "carlos", "cost_usd_24h": 99}]
+        self.assertEqual(evaluate_budget_status(devs, "adi=5"), 0)
+        self.assertIsNone(devs[0]["budget"])
+
+    def test_empty_spec(self) -> None:
+        devs = [{"name": "adi", "cost_usd_24h": 1}]
+        self.assertEqual(evaluate_budget_status(devs, ""), 0)
 
 
 if __name__ == "__main__":

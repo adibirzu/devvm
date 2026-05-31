@@ -159,6 +159,8 @@
 
       [Service]
       Type=oneshot
+      # Budgets drive the board's over-budget badge/banner (Phase 1 tail).
+      Environment=MULTILLM_USER_BUDGETS={{ multillm_user_budgets | default('') }}
       ExecStart=/usr/local/bin/agent-status --home-root /home \
         --gateway http://{{ wg_server_ip | default('10.200.200.1') }}:{{ multillm_gateway_port | default(8080) }} \
         --out /opt/dashboard/agents.json

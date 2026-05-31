@@ -75,7 +75,10 @@
         <h1>🛰️ Agent Board</h1>
         <div class="sub">Live coding-agent sessions across the team — durable through disconnects.</div>
       </div>
-      <a href="/">← Dashboard</a>
+      <div style="display:flex;gap:1rem;align-items:center;">
+        <span id="gw" class="pill dead" title="MultiLLM gateway health">● gateway</span>
+        <a href="/">← Dashboard</a>
+      </div>
     </header>
     <div class="totals" id="totals"></div>
     <div class="notifs" id="notifs"></div>
@@ -101,7 +104,13 @@
         <div class="stat ${t.needs_input ? "needs-input" : ""}"><div class="n">${t.needs_input || 0}</div><div class="l">🔔 need input</div></div>
         <div class="stat"><div class="n">${t.running}</div><div class="l">active sessions</div></div>
         <div class="stat"><div class="n">${t.blocked || 0}</div><div class="l">🛡️ blocked · 1h</div></div>
+        <div class="stat ${t.over_budget ? "needs-input" : ""}"><div class="n">${t.over_budget || 0}</div><div class="l">💸 over budget</div></div>
         <div class="stat"><div class="n">${fmtCost(t.cost_usd)}</div><div class="l">LLM cost · 24h</div></div>`;
+      // Gateway health pill
+      const gw = document.getElementById("gw");
+      const up = data.gateway && data.gateway.up;
+      gw.className = "pill " + (up ? "running" : "dead");
+      gw.textContent = (up ? "● gateway up" : "● gateway down");
       renderNotifs(data);
       renderGuardrail(data);
       const board = document.getElementById("board");
@@ -116,7 +125,10 @@
           </tr>`).join("");
         const body = rows || `<tr><td colspan="5" class="empty">no sessions</td></tr>`;
         const bell = d.needs_input ? '<span class="bell">🔔</span> ' : "";
-        return `<div class="dev ${d.needs_input ? "needs-input" : ""}"><h2>${bell}${d.name}<span class="cost">${fmtCost(d.cost_usd_24h)} · 24h</span></h2>
+        const budget = d.budget
+          ? ` <span class="pill ${d.budget.over ? "dead" : "running"}">${fmtCost(d.budget.spent)}/${fmtCost(d.budget.cap)}${d.budget.over ? " 💸 over" : ""}</span>`
+          : "";
+        return `<div class="dev ${d.needs_input ? "needs-input" : ""}"><h2>${bell}${d.name}<span class="cost">${fmtCost(d.cost_usd_24h)} · 24h${budget}</span></h2>
           <table class="sessions"><thead><tr><th>Agent</th><th>Project</th><th>State</th><th>Dir</th><th>Started</th></tr></thead>
           <tbody>${body}</tbody></table></div>`;
       }).join("");

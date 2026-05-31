@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -202,6 +203,53 @@ def fetch_costs(gateway: str, hours: int = 24) -> Dict[str, float]:
     return costs
 
 
+def parse_budgets(spec: str) -> Dict[str, float]:
+    """Parse 'user=usd,user=usd' into a map (mirror of usage_report.parse_budgets;
+    replicated because each CLI installs standalone to /usr/local/bin)."""
+    out: Dict[str, float] = {}
+    for entry in (spec or "").split(","):
+        entry = entry.strip()
+        if not entry or "=" not in entry:
+            continue
+        user, _, cap = entry.partition("=")
+        try:
+            val = float(cap.strip())
+        except ValueError:
+            continue
+        if user.strip() and val >= 0:
+            out[user.strip()] = val
+    return out
+
+
+def evaluate_budget_status(developers: List[Dict[str, Any]], spec: str) -> int:
+    """Annotate each developer with budget {cap, spent, over}; return over-budget count."""
+    budgets = parse_budgets(spec)
+    over = 0
+    for dev in developers:
+        cap = budgets.get(dev["name"])
+        if cap is None:
+            dev["budget"] = None
+            continue
+        spent = float(dev.get("cost_usd_24h", 0.0) or 0.0)
+        is_over = spent > cap
+        dev["budget"] = {"cap": cap, "spent": round(spent, 4), "over": is_over}
+        if is_over:
+            over += 1
+    return over
+
+
+def fetch_gateway_health(gateway: Optional[str], timeout: float = 4.0) -> Dict[str, Any]:
+    """Best-effort gateway /health probe for the dashboard's health pill."""
+    if not gateway:
+        return {"up": False, "url": None}
+    url = gateway.rstrip("/") + "/health"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+            return {"up": resp.status == 200, "url": gateway}
+    except (urllib.error.URLError, OSError):
+        return {"up": False, "url": gateway}
+
+
 def discover_developers(home_root: Path) -> List[str]:
     """Developers are home dirs that contain an .agentctl directory."""
     if not home_root.is_dir():
@@ -230,15 +278,19 @@ def build(developers: List[str], home_root: Path, gateway: Optional[str]) -> Dic
     now_epoch = datetime.datetime.now(datetime.timezone.utc).timestamp()
     notifs = _read_feed(home_root, developers, now_epoch, "notifications.jsonl", recent_notifications)
     guardrail = _read_feed(home_root, developers, now_epoch, "guardrail.jsonl", recent_guardrail)
-    return build_with(per_user, live, costs, notifs, guardrail)
+    health = fetch_gateway_health(gateway)
+    budgets_spec = os.environ.get("MULTILLM_USER_BUDGETS", "")
+    return build_with(per_user, live, costs, notifs, guardrail, health, budgets_spec)
 
 
-def build_with(per_user, live, costs, notifs=None, guardrail=None) -> Dict[str, Any]:
+def build_with(per_user, live, costs, notifs=None, guardrail=None, health=None, budgets_spec="") -> Dict[str, Any]:
     board = merge_board(per_user, live, costs)
     ringing = apply_notifications(board["developers"], notifs or {})
     board["totals"]["needs_input"] = ringing
     board["guardrail"] = summarize_guardrail(guardrail or {})
     board["totals"]["blocked"] = board["guardrail"]["denied"]
+    board["gateway"] = health or {"up": False, "url": None}
+    board["totals"]["over_budget"] = evaluate_budget_status(board["developers"], budgets_spec)
     return board
 
 
