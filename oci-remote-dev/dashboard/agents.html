@@ -47,6 +47,8 @@
     </header>
     <div class="totals" id="totals"></div>
     <div id="board"><p class="empty">Loading…</p></div>
+    <h2 style="margin:2.5rem 0 1rem;">📁 Projects</h2>
+    <div id="projects"><p class="empty">Loading…</p></div>
     <footer id="foot"></footer>
   </div>
   <script>
@@ -75,14 +77,47 @@
           <tbody>${body}</tbody></table></div>`;
       }).join("");
     }
+    function gitBadge(g) {
+      if (!g) return `<span class="pill dead">no git</span>`;
+      const clean = g.clean ? `<span class="pill running">clean</span>`
+                            : `<span class="pill dead">${g.dirty || 0}±, ${g.untracked || 0}?</span>`;
+      const track = (g.ahead || g.behind)
+        ? ` <span class="cost">↑${g.ahead || 0} ↓${g.behind || 0}</span>` : "";
+      return `<strong>${g.branch || "?"}</strong> ${clean}${track}`;
+    }
+    function renderProjects(data) {
+      const box = document.getElementById("projects");
+      const ps = (data && data.projects) || [];
+      if (!ps.length) { box.innerHTML = `<p class="empty">No active projects.</p>`; return; }
+      box.innerHTML = ps.map(p => {
+        const lc = (p.git && p.git.last_commit) || {};
+        const commit = lc.hash ? `${lc.hash} · ${lc.subject || ""} <span class="cost">(${lc.when || ""})</span>` : "—";
+        const agents = (p.active_agents || [])
+          .map(a => `<span class="pill ${a.state === "dead" ? "dead" : (a.state === "attached" ? "attached" : "running")}">${a.user}/${a.agent}</span>`)
+          .join(" ") || `<span class="empty">none</span>`;
+        return `<div class="dev"><h2>${p.project}<span class="cost">${p.dir || ""}</span></h2>
+          <table><tbody>
+            <tr><td style="width:12rem;">Git</td><td>${gitBadge(p.git)}</td></tr>
+            <tr><td>Last commit</td><td>${commit}</td></tr>
+            <tr><td>Active agents</td><td>${agents}</td></tr>
+          </tbody></table></div>`;
+      }).join("");
+    }
     async function tick() {
+      let ok = false;
       try {
         const r = await fetch("/agents.json?ts=" + Date.now(), { cache: "no-store" });
-        render(await r.json());
-        document.getElementById("foot").textContent = "Updated " + new Date().toLocaleTimeString() + " · refreshes every 15s";
+        render(await r.json()); ok = true;
       } catch (e) {
-        document.getElementById("foot").textContent = "agents.json unavailable — is agent-status.timer running?";
+        document.getElementById("board").innerHTML = `<p class="empty">agents.json unavailable — is agent-status.timer running?</p>`;
       }
+      try {
+        const rp = await fetch("/projects.json?ts=" + Date.now(), { cache: "no-store" });
+        renderProjects(await rp.json());
+      } catch (e) {
+        document.getElementById("projects").innerHTML = `<p class="empty">projects.json unavailable.</p>`;
+      }
+      document.getElementById("foot").textContent = (ok ? "Updated " + new Date().toLocaleTimeString() : "partial data") + " · agents 15s, projects 30s";
     }
     tick(); setInterval(tick, 15000);
   </script>

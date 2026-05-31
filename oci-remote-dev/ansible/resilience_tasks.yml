@@ -137,3 +137,51 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: Resilience | Install project-status aggregator
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/project_status.py"
+    dest: /usr/local/bin/project-status
+    owner: root
+    group: developers
+    mode: '0755'
+
+- name: Resilience | project-status snapshot service (writes projects.json)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/project-status.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Aggregate per-project git state + active agents into /opt/dashboard/projects.json
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/project-status --home-root /home --out /opt/dashboard/projects.json
+
+- name: Resilience | project-status timer (every 30s)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/project-status.timer
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Refresh the project board every 30 seconds
+
+      [Timer]
+      OnBootSec=45s
+      OnUnitActiveSec=30s
+      AccuracySec=5s
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Resilience | Reload systemd + enable the project-status timer
+  ansible.builtin.systemd:
+    name: project-status.timer
+    enabled: true
+    state: started
+    daemon_reload: true
