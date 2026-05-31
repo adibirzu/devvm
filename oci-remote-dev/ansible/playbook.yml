@@ -372,8 +372,25 @@
               echo "  start       Start a shared Claude Code session in tmux"
               echo "  join        Join / attach to the active shared Claude Code session"
               echo "  status      Check the status of the shared session and active users"
-              echo "  kill        Terminate the shared session"
+              echo "  note <text> Save a pairing note to the shared context bus"
+              echo "  summary     Capture the session transcript to the shared context bus"
+              echo "  kill        Save a summary, then terminate the shared session"
               echo "  help        Show this help message"
+          }
+
+          # Push pairing context to the shared bus so whoever joins later has continuity.
+          save_summary() {
+              command -v context >/dev/null 2>&1 || { echo "context CLI not found; skipping bus save."; return 0; }
+              if [ ! -S "$SOCKET" ] || ! tmux -S "$SOCKET" has-session -t "$SESSION_NAME" 2>/dev/null; then
+                  echo "No active shared session to summarize."; return 0
+              fi
+              local content
+              content="$(tmux -S "$SOCKET" capture-pane -p -t "$SESSION_NAME" -S -200 2>/dev/null | tail -120 || true)"
+              if context put "pair-session $(date -u +%Y-%m-%dT%H:%MZ)" "$content" --category pairing --shared >/dev/null 2>&1; then
+                  echo "Pairing summary saved to the shared context bus (recall: context search pairing --shared)."
+              else
+                  echo "Could not save to the context bus."
+              fi
           }
 
           case "${1:-help}" in
@@ -410,7 +427,22 @@
                       echo "Shared session: INACTIVE"
                   fi
                   ;;
+              note)
+                  shift
+                  TEXT="${*:-}"
+                  [ -n "$TEXT" ] || { echo "usage: pair-claude note \"<text>\""; exit 1; }
+                  if command -v context >/dev/null 2>&1; then
+                      context put "pair-note $(date -u +%Y-%m-%dT%H:%MZ)" "$TEXT" --category pairing --shared >/dev/null 2>&1 \
+                          && echo "Note saved to the shared context bus." || echo "Could not save the note."
+                  else
+                      echo "context CLI not found."
+                  fi
+                  ;;
+              summary)
+                  save_summary
+                  ;;
               kill)
+                  save_summary
                   tmux -S "$SOCKET" kill-session -t "$SESSION_NAME" 2>/dev/null || true
                   rm -f "$SOCKET"
                   echo "Shared session killed."
