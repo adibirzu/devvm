@@ -75,9 +75,44 @@ def due_jobs(jobs: List[Dict[str, Any]], now_epoch: float) -> List[Dict[str, Any
     return [j for j in jobs if is_due(j, now_epoch)]
 
 
+def _resolve_via_registry(agent: str, prompt: str) -> Optional[List[str]]:
+    """Resolve a non-built-in runtime through the pluggable registry (pai-runtimes).
+
+    Keeps agent-job in lock-step with agentctl / pai-runtimes for the registered
+    runtimes (antigravity/agy, hermes, nanoclaw, …) instead of hardcoding a second
+    list. Returns None when pai-runtimes is absent or can't resolve.
+    """
+    from shutil import which
+    bin_name = os.environ.get("PAI_RUNTIMES_BIN", "pai-runtimes")
+    if which(bin_name) is None:
+        return None
+    try:
+        out = subprocess.run(
+            [bin_name, "resolve", agent, "--prompt", prompt],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    if not out:
+        return None
+    # `resolve` may prefix `VAR=value ` for gateway-routed runtimes; agent-job runs
+    # under the user's env where those are already exported, so drop env-assignments.
+    argv = [tok for tok in out.split() if not ("=" in tok and tok.split("=", 1)[0].isupper())]
+    return argv or None
+
+
 def build_agent_argv(agent: str, prompt: str) -> List[str]:
-    base = AGENT_CMD.get(agent, [agent, "-p"])
-    return [*base, prompt]
+    """Resolve an agent name + prompt to a non-interactive argv.
+
+    Built-ins (claude, codex) resolve inline; any other registered runtime resolves
+    through pai-runtimes; the final fallback keeps the prior behaviour (`<agent> -p`).
+    """
+    if agent in AGENT_CMD:
+        return [*AGENT_CMD[agent], prompt]
+    resolved = _resolve_via_registry(agent, prompt)
+    if resolved:
+        return resolved
+    return [agent, "-p", prompt]
 
 
 # ── IO ───────────────────────────────────────────────────────────────────────

@@ -480,9 +480,14 @@ PAI_AGE_RECIPIENTS="age1...,age1..."                    # one public key per dev
   session, **never** in `/opt/shared-dev`.
 - **Same Obi everywhere** — `pai-sync` keeps MEMORY identical across Macs/Ubuntu/
   Windows via a private encrypted repo (offline-first; add a cloud remote by config).
-- **Governed multi-runtime** — `pai-runtimes` registers Claude, Codex, Gemini, and
-  **Antigravity (AGY), Hermes, nano-claw/OpenClaw** behind one data file; all inherit
-  the PreToolUse guardrail and route usage through the MultiLLM gateway.
+- **Governed multi-runtime** — `pai-runtimes` registers Claude, Codex,
+  **Antigravity (AGY, replaces Gemini), Hermes, nano-claw/OpenClaw** behind one data
+  file; all inherit the PreToolUse guardrail and route usage through the MultiLLM
+  gateway. Launch any of them as a durable session: `agentctl start agy …` /
+  `agent-job --agent hermes …` resolve through the registry.
+
+**New user? Start here:** [`docs/GETTING-STARTED.md`](docs/GETTING-STARTED.md) — a
+step-by-step guide to driving these agents on the VM with drop-resilient sessions.
 
 Docs: [`docs/PAI-INTEGRATION.md`](docs/PAI-INTEGRATION.md) ·
 [`docs/MULTI-DEVICE-SYNC.md`](docs/MULTI-DEVICE-SYNC.md) ·
