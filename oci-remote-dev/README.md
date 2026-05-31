@@ -71,14 +71,17 @@ Prompts for OCI profile/compartment, VM shape, WireGuard settings (including **s
 ### 2. Deploy
 
 ```bash
-# Preview without applying
+# Preview the full plan without creating anything (no cloud calls, no keys)
 ./scripts/deploy.sh --dry-run --profile <OCI_PROFILE> --yes
 
 # Provision the VM and run the Ansible playbook
 ./scripts/deploy.sh --profile <OCI_PROFILE> --yes
 ```
 
-`deploy.sh` wraps `deploy_multicloud.py`, which compiles per-developer WireGuard keys, renders a ~3 KB network-only cloud-init, launches the instance, waits for SSH, and runs the Ansible playbook (GUI, desktops, code-servers, AI CLIs, shared MultiLLM gateway, dashboard).
+`deploy.sh` wraps `deploy_multicloud.py`, which compiles per-developer WireGuard keys, renders a ~3 KB network-only cloud-init, launches the instance, waits for SSH, and runs the Ansible playbook (GUI, desktops, code-servers, AI CLIs, shared MultiLLM gateway, dashboard). It finishes by running `verify-agent-os` and printing the result.
+
+> **First time / end-to-end confirmation?** Follow the ordered, safety-checked
+> [staging-deploy checklist](docs/STAGING-DEPLOY.md) (dry-run → deploy → verify → teardown).
 
 ### 3. Connect
 

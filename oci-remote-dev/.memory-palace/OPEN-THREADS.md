@@ -3,6 +3,8 @@
 What's in flight. **Read this first on reconnect.** Move finished items to `SESSION-LOG.md`.
 
 ## Recently shipped
+- [x] Implemented real `--dry-run` (README documented it but argparse rejected it) — prints
+      the plan, zero side effects. Added docs/STAGING-DEPLOY.md (safe cap-tenancy checklist).
 - [x] Pre-use verification (repo stays PRIVATE): gitleaks config added (the 1 finding
       was a synthetic private-key test fixture); docs/links/install scripts verified.
 - [x] Fixed deploy-blocking bug: multillm source `../multillm` didn't resolve → deploy

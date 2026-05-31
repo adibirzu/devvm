@@ -145,16 +145,19 @@ class MultiCloudDeployer:
             fail(f"Developer '{name}' has no valid SSH public key configured.")
         return dev
 
-    def check_prerequisites(self) -> None:
+    def check_prerequisites(self, dry_run: bool = False) -> None:
         log(f"Checking prerequisites for cloud provider: {self.provider}...")
+        # In dry-run we only preview the plan, so missing local tooling is a warning,
+        # not a hard failure — the operator may be planning from a different machine.
+        miss = warn if dry_run else fail
         if shutil.which("wg") is None:
-            fail("WireGuard tools not found. Install wireguard-tools before deploying.")
+            miss("WireGuard tools not found. Install wireguard-tools before deploying.")
 
         ssh_pub_path = Path(
             self._get_env("SSH_PUBLIC_KEY_PATH", "~/.ssh/id_rsa.pub")
         ).expanduser()
         if not ssh_pub_path.exists():
-            fail(f"SSH public key not found: {ssh_pub_path}")
+            miss(f"SSH public key not found: {ssh_pub_path}")
 
         # Verify provider specific CLI tools if not using OCI
         if self.provider == "AWS":
@@ -1468,9 +1471,96 @@ class MultiCloudDeployer:
         )
         print("")
 
+    def _print_dry_run_plan(self) -> None:
+        """Print the deployment plan. No cloud calls, no disk writes — preview only."""
+        g = self._get_env
+
+        def row(label: str, value: str) -> None:
+            print(f"  {CYAN}{label:<26}{NC} {value}")
+
+        print(f"\n{BLUE}{'=' * 64}{NC}")
+        print(f"{BLUE}  DRY RUN — deployment plan (no resources will be created){NC}")
+        print(f"{BLUE}{'=' * 64}{NC}\n")
+
+        print(f"{GREEN}Cloud / instance{NC}")
+        row("provider", self.provider)
+        row("profile", self.args.profile or g("OCI_PROFILE") or "DEFAULT")
+        row("region", g("OCI_REGION") or "(profile default)")
+        row(
+            "compartment",
+            g("OCI_COMPARTMENT_NAME") or g("OCI_COMPARTMENT_OCID") or "(tenancy root)",
+        )
+        row("vm name", g("VM_NAME", "remote-dev-server"))
+        row("shape", g("VM_SHAPE", "VM.Standard.E6.Flex"))
+        row(
+            "ocpus / memory",
+            f"{g('VM_OCPUS', '4')} OCPU / {g('VM_MEMORY_GB', '32')} GB",
+        )
+        row(
+            "ubuntu / boot vol",
+            f"{g('UBUNTU_VERSION', '24.04')} / {g('VM_BOOT_VOLUME_GB', '100')} GB",
+        )
+
+        print(f"\n{GREEN}Network / WireGuard{NC}")
+        if g("EXISTING_VCN_OCID") and g("EXISTING_SUBNET_OCID"):
+            row("network", "use existing VCN + subnet")
+        else:
+            row(
+                "network",
+                f"create VCN {g('VCN_CIDR', '10.0.0.0/16')} / subnet {g('SUBNET_CIDR', '10.0.1.0/24')}",
+            )
+        row("wg network", g("WG_NETWORK", "10.200.200.0/24"))
+        row(
+            "wg server / port",
+            f"{g('WG_SERVER_IP', '10.200.200.1')} : {g('WG_PORT', '51820')}/udp",
+        )
+        row(
+            "tunnel mode",
+            "FULL" if self._env_bool("WG_FULL_TUNNEL", False) else "split (default)",
+        )
+        row(
+            "open ports (VPN-only)",
+            "22, 80, 3389, 51820/udp, 8080, 8082, 60000-61000/udp",
+        )
+
+        print(f"\n{GREEN}Developers ({len(self.developers)}){NC}")
+        for d in self.developers:
+            row(
+                d["name"],
+                f"wg {d.get('wg_ip', '?')} · code-server {d.get('code_server_port', '?')} · gh {d.get('github_user', d['name'])}",
+            )
+
+        print(f"\n{GREEN}Feature toggles{NC}")
+        for label, key in [
+            ("MultiLLM gateway", "INSTALL_MULTILLM_GATEWAY"),
+            ("Resilience layer", "INSTALL_RESILIENCE_LAYER"),
+            ("Agent-OS (guardrails)", "INSTALL_AGENT_OS"),
+            ("code-server", "INSTALL_CODE_SERVER"),
+            ("Cursor", "INSTALL_CURSOR"),
+        ]:
+            row(label, "on" if self._env_bool(key, True) else "off")
+        src = g("MULTILLM_SOURCE_PATH")
+        row(
+            "MultiLLM source",
+            (
+                f"local: {src}"
+                if src
+                else f"clone {g('MULTILLM_GIT_URL', 'https://github.com/adibirzu/multillm.git')}"
+            ),
+        )
+
+        print(f"\n{YELLOW}This was a DRY RUN. No cloud resources were created, no keys")
+        print("were generated, and Ansible was not run. Re-run without --dry-run")
+        print(f"to deploy.{NC}\n")
+
     def execute(self) -> None:
-        self.check_prerequisites()
+        dry_run = getattr(self.args, "dry_run", False)
+        self.check_prerequisites(dry_run=dry_run)
         self.build_developers_list()
+
+        if dry_run:
+            self._print_dry_run_plan()
+            return
 
         if not self.args.yes:
             print(f"\n{BLUE}Deployment Target: {self.provider}{NC}")
@@ -1517,6 +1607,11 @@ def main() -> int:
     )
     p.add_argument("--skip-ssh-verify", action="store_true", help="Skip SSH check")
     p.add_argument("--profile", default=None, help="OCI CLI profile name")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview the deployment plan without creating any cloud resources",
+    )
     args = p.parse_args()
 
     try:
