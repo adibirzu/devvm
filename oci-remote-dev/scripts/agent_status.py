@@ -279,8 +279,22 @@ def build(developers: List[str], home_root: Path, gateway: Optional[str]) -> Dic
     notifs = _read_feed(home_root, developers, now_epoch, "notifications.jsonl", recent_notifications)
     guardrail = _read_feed(home_root, developers, now_epoch, "guardrail.jsonl", recent_guardrail)
     health = fetch_gateway_health(gateway)
-    budgets_spec = os.environ.get("MULTILLM_USER_BUDGETS", "")
+    budgets_spec = _load_budgets_spec()
     return build_with(per_user, live, costs, notifs, guardrail, health, budgets_spec)
+
+
+def _load_budgets_spec() -> str:
+    """Budgets set live by the control-plane API (/etc/agent-os/budgets) win over the
+    deploy-time MULTILLM_USER_BUDGETS env, so POST /budgets takes effect on next poll."""
+    f = Path("/etc/agent-os/budgets")
+    try:
+        if f.exists():
+            txt = f.read_text(encoding="utf-8").strip()
+            if txt:
+                return txt
+    except OSError:
+        pass
+    return os.environ.get("MULTILLM_USER_BUDGETS", "")
 
 
 def build_with(per_user, live, costs, notifs=None, guardrail=None, health=None, budgets_spec="") -> Dict[str, Any]:
