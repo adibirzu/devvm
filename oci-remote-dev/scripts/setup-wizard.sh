@@ -368,7 +368,7 @@ main() {
 
     # ========== API Keys (Optional) ==========
     echo -e "\n${BLUE}=== API Keys (Optional - can be set later) ===${NC}"
-    echo -e "${YELLOW}Leave empty to configure later. Keys are stored in .env${NC}"
+    echo -e "${YELLOW}Leave empty to configure later. Keys are stored in .env.local (git-ignored)${NC}"
 
     prompt ANTHROPIC_API_KEY "Anthropic API Key (Claude)" ""
     prompt OPENAI_API_KEY "OpenAI API Key (Codex)" ""
@@ -483,7 +483,7 @@ EOF
 
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║           Configuration saved to .env                            ║${NC}"
+    echo -e "${GREEN}║        Configuration saved to .env.local (git-ignored)           ║${NC}"
     echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${GREEN}║${NC} Cloud Target: ${CYAN}$CLOUD_PROVIDER${NC}"
     echo -e "${GREEN}║${NC} Instance:     ${CYAN}$VM_NAME${NC}"
