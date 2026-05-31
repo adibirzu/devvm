@@ -162,20 +162,33 @@ class MultiCloudDeployer:
                 
         log("Prerequisites OK")
 
+    def _git_identity(self, name: str, prefix: str) -> Dict[str, str]:
+        """Resolve a developer's GitHub identity from env, with safe defaults.
+
+        prefix is "" for the admin (GIT_NAME / GIT_EMAIL / GITHUB_USER) or
+        "DEV_<n>_" for additional developers. Email defaults to GitHub's noreply
+        form so no personal address is required or leaked.
+        """
+        gh_user = self._get_env(f"{prefix}GITHUB_USER", name)
+        git_name = self._get_env(f"{prefix}GIT_NAME", gh_user or name)
+        git_email = self._get_env(f"{prefix}GIT_EMAIL", f"{gh_user or name}@users.noreply.github.com")
+        return {"git_name": git_name, "git_email": git_email, "github_user": gh_user or name}
+
     def build_developers_list(self) -> None:
         ssh_pub = Path(self._get_env("SSH_PUBLIC_KEY_PATH", "~/.ssh/id_rsa.pub")).expanduser()
         dev1_name = self._get_env("ADMIN_USERNAME", "devuser")
         dev1_ssh = self._resolve_ssh_key(str(ssh_pub))
         dev1_wg_ip = self._get_env("WG_CLIENT_IP", "10.200.200.2")
         dev1_port = int(self._get_env("CODE_SERVER_PORT", "8443"))
-        
+
         self.developers.append(self._validate_developer({
             "name": dev1_name,
             "ssh_key": dev1_ssh,
             "wg_ip": dev1_wg_ip,
             "code_server_port": dev1_port,
             "private_key": "",
-            "public_key": ""
+            "public_key": "",
+            **self._git_identity(dev1_name, ""),
         }))
         
         if self._env_bool("MULTI_DEV_ENABLED", False):
@@ -208,7 +221,8 @@ class MultiCloudDeployer:
                         "wg_ip": self._get_env(wg_key, f"10.200.200.{idx + 1}"),
                         "code_server_port": int(self._get_env(port_key, str(8443 + idx - 1))),
                         "private_key": "",
-                        "public_key": ""
+                        "public_key": "",
+                        **self._git_identity(dev_name, f"DEV_{idx}_"),
                     }))
                 idx += 1
 
@@ -984,7 +998,10 @@ class MultiCloudDeployer:
             devs_vars.append({
                 "name": dev["name"],
                 "code_server_port": dev["code_server_port"],
-                "wg_ip": dev["wg_ip"]
+                "wg_ip": dev["wg_ip"],
+                "git_name": dev.get("git_name", dev["name"]),
+                "git_email": dev.get("git_email", f"{dev['name']}@users.noreply.github.com"),
+                "github_user": dev.get("github_user", dev["name"]),
             })
 
         extra_vars = {
