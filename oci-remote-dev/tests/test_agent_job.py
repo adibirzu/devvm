@@ -52,7 +52,20 @@ class TestArgv(unittest.TestCase):
         self.assertEqual(build_agent_argv("codex", "do x"), ["codex", "exec", "do x"])
 
     def test_unknown_agent_fallback(self) -> None:
+        # Unknown runtime with no pai-runtimes on PATH → prior fallback behaviour.
         self.assertEqual(build_agent_argv("aider", "do x"), ["aider", "-p", "do x"])
+
+    def test_registry_resolution_used_when_available(self) -> None:
+        # When pai-runtimes resolves a runtime, agent-job uses that argv verbatim;
+        # built-ins still resolve inline, unaffected.
+        import scripts.agent_job as aj
+        orig = aj._resolve_via_registry
+        try:
+            aj._resolve_via_registry = lambda agent, prompt: ["antigravity", "run", "--prompt", prompt]
+            self.assertEqual(build_agent_argv("agy", "do x"), ["antigravity", "run", "--prompt", "do x"])
+            self.assertEqual(build_agent_argv("claude", "do x"), ["claude", "-p", "do x"])
+        finally:
+            aj._resolve_via_registry = orig
 
 
 if __name__ == "__main__":
