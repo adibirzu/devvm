@@ -1,0 +1,21 @@
+{
+  "_comment": "Central registry of APPROVED MCP servers. Per-user ~/.claude/.mcp.json is generated from this (merge-safe) so the agent fleet exposes one governed tool surface. Deployed to /opt/agent-os/registry.json; edit there to add/remove servers.",
+  "servers": [
+    {
+      "name": "multillm",
+      "enabled": true,
+      "description": "MultiLLM gateway — multi-model routing, shared memory/context bus, usage.",
+      "command": "python3",
+      "args": ["-m", "multillm.mcp_server"],
+      "env": { "LLM_GATEWAY_URL": "http://localhost:${MULTILLM_GATEWAY_PORT}" }
+    },
+    {
+      "name": "oci-readonly",
+      "enabled": true,
+      "description": "OCI read-only — list/get compartments and instances. No mutations.",
+      "command": "python3",
+      "args": ["/usr/local/lib/agent-os/oci_mcp_server.py"],
+      "env": { "OCI_CLI_PROFILE": "${OCI_PROFILE}" }
+    }
+  ]
+}
