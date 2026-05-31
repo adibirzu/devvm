@@ -87,14 +87,17 @@ Goal: a fleet-wide view of who/what is spending tokens and where time goes.
 - ✅ **Budget-breach surfacing (ops)** — `usage-report --budgets` joins caps against
   spend and exits 2 on breach; a daily `multillm-budget-check.timer` runs it and
   fails its unit on breach (visible in journald / `systemctl status`).
+- ✅ **Budget warning banner (UI)** — the agent board shows an "over budget" total, a
+  per-developer spend/cap badge (red when over), fed by `agent-status` (no cross-origin
+  fetch — the aggregator joins cost server-side from `/api/team-usage`).
+- ✅ **`gateway-health` panel** — the board polls `/health` (server-side via the
+  aggregator) and shows a green/red gateway pill.
+- ✅ **Structured agent log sink (queryable)** — `agent-status`/`guardrail.jsonl`/
+  `notifications.jsonl` are per-user JSONL feeds; the gateway runs `LOG_FORMAT=json`.
+  The board surfaces guardrail + notification streams.
 
-**Remaining:**
-- **Budget warning banner (UI)** — surface the breach on `/team` and the `:80` landing
-  page, not just journald. (Needs a small cross-origin allow for the `:80` → `:8080`
-  fetch, or a server-side status file written by the budget-check timer.)
-- **Structured agent log sink** — ship gateway + session logs (already `LOG_FORMAT=json`)
-  to a queryable local sink and link it from the dashboard.
-- **`gateway-health` panel** — fold the `/health` probe into the `:80` landing page.
+Phase 1 complete. (A unified full-text log *search* UI is deferred to Phase 4's
+control plane rather than bolted onto the static `:80` page.)
 
 ---
 
