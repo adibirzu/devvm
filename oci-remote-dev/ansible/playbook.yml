@@ -26,6 +26,7 @@
     pai_age_recipients: ""
     pai_encrypt_memory: true
     install_antigravity: true
+    install_hermes: false
     multillm_source_path: "../multillm"
     # developers list will be passed as extra_vars
     developers: []

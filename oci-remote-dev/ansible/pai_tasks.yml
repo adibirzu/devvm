@@ -49,6 +49,60 @@
     - install_antigravity | default(true) | bool
     - agy_fetch is succeeded
 
+# Hermes (Nous Research) — local agent runtime, registered so the SAME Telegram/
+# WhatsApp bots can drive it on the VM. Headless one-shot is `hermes -z "<prompt>"`.
+# Installed per-user (NOT root) because chmod 600 gives zero isolation between two
+# agents under the same UID. Download-then-run, --skip-browser for headless servers.
+- name: PAI | Fetch the Hermes installer to disk (auditable)
+  ansible.builtin.get_url:
+    url: "{{ hermes_installer_url | default('https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh') }}"
+    dest: /opt/agent-os/hermes-install.sh
+    mode: '0750'
+    owner: root
+    group: developers
+    checksum: "{{ ('sha256:' + hermes_installer_sha256) if (hermes_installer_sha256 | default('')) else omit }}"
+  register: hermes_fetch
+  failed_when: false
+  when: install_hermes | default(false) | bool
+
+- name: PAI | Install Hermes per-developer (headless, --skip-browser, never root)
+  become: true
+  become_user: "{{ item.name }}"
+  ansible.builtin.command:
+    cmd: /bin/bash /opt/agent-os/hermes-install.sh --skip-browser
+    creates: "/home/{{ item.name }}/.local/bin/hermes"
+  environment:
+    HERMES_HOME: "/home/{{ item.name }}/.hermes"
+  loop: "{{ developers }}"
+  register: hermes_install
+  changed_when: "'installed' in (hermes_install.stdout | default('') | lower)"
+  failed_when: false
+  when:
+    - install_hermes | default(false) | bool
+    - hermes_fetch is succeeded
+    - developers | length > 0
+
+- name: PAI | Harden Hermes secrets per-developer (chmod 600 on .env/SOUL/config)
+  become: true
+  become_user: "{{ item.name }}"
+  ansible.builtin.shell: |
+    set -e
+    H="/home/{{ item.name }}/.hermes"
+    [ -d "$H" ] || exit 0
+    for f in .env SOUL.md config.yaml auth.json exec-policy.json; do
+      [ -f "$H/$f" ] && chmod 600 "$H/$f" || true
+    done
+    for d in memories sessions cron credentials; do
+      [ -d "$H/$d" ] && chmod 700 "$H/$d" || true
+    done
+    echo hardened
+  loop: "{{ developers }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - install_hermes | default(false) | bool
+    - developers | length > 0
+
 - name: PAI | Library directory for shared agent-runtime data
   ansible.builtin.file:
     path: /opt/agent-os

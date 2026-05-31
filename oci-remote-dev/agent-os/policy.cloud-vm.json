@@ -1,0 +1,20 @@
+{
+  "_comment": "Profile A — Cloud VM (coding). Hardened guardrail policy for the shared multi-tenant OCI VM. Matches guardrail.py schema (allowed_write_roots + rules[{id,action,tool,command_regex|path_regex|path_outside_roots,reason}]). Load: copy to /etc/agent-os/policy.json (the PreToolUse hook reads it) or `guardrail --load`. Superset of the default policy + secret-exfil, cross-tenant, and pipe-to-shell denials. Grounded in 2026 research (lethal trifecta, GitGuardian MCP-config leaks, Antigravity egress exfil).",
+  "allowed_write_roots": ["~", "/opt/shared-dev", "/tmp"],
+  "rules": [
+    {"id": "rm-rf-root", "action": "deny", "tool": "Bash", "command_regex": "rm\\s+-[a-z]*r[a-z]*f?\\s+(/|~|\\$HOME|/\\*|--no-preserve-root)", "reason": "Recursive force-delete of a root/home path is blocked."},
+    {"id": "disk-destroyer", "action": "deny", "tool": "Bash", "command_regex": "\\b(mkfs|fdisk|wipefs)\\b|dd\\s+if=\\S+\\s+of=/dev/|>\\s*/dev/sd", "reason": "Direct disk/partition writes are blocked."},
+    {"id": "fork-bomb", "action": "deny", "tool": "Bash", "command_regex": ":\\s*\\(\\s*\\)\\s*\\{\\s*:\\s*\\|\\s*:", "reason": "Fork bomb pattern blocked."},
+    {"id": "power", "action": "deny", "tool": "Bash", "command_regex": "\\b(shutdown|reboot|halt|poweroff)\\b", "reason": "Power-state commands are blocked on the shared VM."},
+    {"id": "force-push-protected", "action": "deny", "tool": "Bash", "command_regex": "git\\s+push\\b.*(--force\\b|-f\\b).*\\b(main|master)\\b", "reason": "Force-pushing a protected branch is blocked."},
+    {"id": "pipe-to-shell", "action": "deny", "tool": "Bash", "command_regex": "(curl|wget|fetch)\\s+[^|]*\\|\\s*(bash|sh|zsh)\\b", "reason": "Piping a remote script straight to a shell is blocked (download-then-run instead)."},
+    {"id": "cross-tenant-home", "action": "deny", "tool": "Bash", "command_regex": "(cat|less|head|tail|cp|scp|rsync)\\s+[^\\n]*/home/(?!\\$?USER\\b)[a-z][a-z0-9_-]*/", "reason": "Reading another tenant's home directory is blocked."},
+    {"id": "fleet-secret-read", "action": "deny", "tool": "Bash", "command_regex": "(cat|less|head|tail|strings)\\s+[^\\n]*(/etc/multillm/|/etc/agent-os/admin\\.token|collector\\.env)", "reason": "Reading fleet secret files is blocked."},
+    {"id": "cloud-destroy", "action": "ask", "tool": "Bash", "command_regex": "\\b(oci|aws|gcloud|az)\\b.*\\b(delete|terminate|destroy|remove|rm)\\b|terraform\\s+destroy|kubectl\\s+(delete|drain|cordon)\\b|helm\\s+(uninstall|delete)\\b", "reason": "Cloud/cluster resource mutation — confirm before running."},
+    {"id": "db-destructive", "action": "ask", "tool": "Bash", "command_regex": "\\b(DROP\\s+(TABLE|DATABASE)|TRUNCATE\\s+TABLE|DELETE\\s+FROM)\\b", "reason": "Destructive SQL — confirm before running."},
+    {"id": "system-install", "action": "ask", "tool": "Bash", "command_regex": "\\bsudo\\b.*\\b(apt|apt-get|dnf|yum)\\b\\s+(install|remove|purge)|\\bpip\\d?\\s+install\\b.*\\s-g\\b|npm\\s+install\\s+-g\\b", "reason": "System-wide install/removal — confirm before running."},
+    {"id": "outbound-transfer", "action": "ask", "tool": "Bash", "command_regex": "(scp|rsync|sftp|curl\\s+-T|curl\\s+--upload-file)\\s+[^\\n]*@", "reason": "Outbound file transfer — exfil vector, confirm target."},
+    {"id": "secret-read", "action": "ask", "tool": "*", "path_regex": "(/\\.ssh/id_|/\\.ssh/.*_rsa$|\\.pem$|\\.key$|(^|/)\\.env$|/keys\\.txt$|/\\.aws/credentials|/\\.oci/.*\\.pem|age\\.key$)", "reason": "Access to a private key / credentials file — confirm."},
+    {"id": "write-outside-roots", "action": "ask", "tool": "Write,Edit,MultiEdit,NotebookEdit", "path_outside_roots": true, "reason": "Writing outside your home / shared workspace / tmp — confirm."}
+  ]
+}

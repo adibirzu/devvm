@@ -43,12 +43,13 @@
     {
       "name": "hermes",
       "enabled": true,
-      "description": "Local Hermes agent runtime. Command path is a placeholder until the principal supplies the exact binary/flags.",
+      "description": "Nous Research Hermes agent. Binary 'hermes'. Headless one-shot: 'hermes -z \"<prompt>\"' (final answer only). Config ~/.hermes/{.env,SOUL.md,config.yaml} (chmod 600). Gateway routing via OPENAI_BASE_URL. Install: download github.com/NousResearch/hermes-agent install.sh, review, run (--skip-browser headless). Docs: hermes-agent.nousresearch.com",
       "kind": "cli",
+      "docs": "https://hermes-agent.nousresearch.com/docs/reference/cli-commands/",
       "interactive_template": ["hermes"],
-      "exec_template": ["hermes", "--task", "{prompt}"],
+      "exec_template": ["hermes", "-z", "{prompt}"],
       "gateway_routed": true,
-      "gateway_env": "HERMES_BASE_URL",
+      "gateway_env": "OPENAI_BASE_URL",
       "guardrail_scope": "default",
       "agentctl_compatible": true
     },
