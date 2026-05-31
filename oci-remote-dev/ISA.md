@@ -239,3 +239,10 @@ unit-tested to the repo's existing standards.
 - VM deps (separate `install_deps.yml`, ok=7): age 1.1.1, pytest 7.4.4, mosh, rsync installed.
 - ISC-4,42: PR pending — branch pushed; gh token invalid so PR object opened manually at github.com/adibirzu/devvm.
 - Deferred (DEFERRED-VERIFY): ISC-27..30 per-user encryption-at-rest verified by code+docs; live per-user `pai-bootstrap` runs when a real `developers` list is passed (CLIs-only deploy used `developers=[]`). Follow-up: deploy with the fleet's actual developer list to exercise per-user bootstrap + age-identity creation.
+
+### Phase 7 (secure agents + Hermes + devvm safety)
+- Secure profiles `agent-os/policy.{cloud-vm,mac-coding,mac-home}.json` — VERIFIED loading+evaluating via `GUARDRAIL_POLICY=<abs> guardrail.py`: cross-tenant read→deny, exfil scp→ask, pipe-to-shell→deny (cloud-vm); homeassistant→deny air-gap (mac-coding); lock/garage `--yes`→deny T3, thermostat→ask T2, temp read→allow T1 (mac-home). Grounded in verified 2026 research (lethal trifecta, Antigravity exfil, MCP poisoning, GitGuardian).
+- Hermes: runtimes.json → real `hermes -z "{prompt}"` + `OPENAI_BASE_URL`; `ansible/pai_tasks.yml` install_hermes task (per-user download-then-run `--skip-browser`, chmod600 ~/.hermes/{.env,SOUL.md,config.yaml}). Verified vs github.com/NousResearch/hermes-agent.
+- devvm safety: setup-wizard writes `.env.local` (git-ignored); wizard prompts ADMIN_USERNAME + additional developers on first run; `.env.example` stays the only committed template.
+- `docs/SECURITY-PROFILES.md`, `scripts/egress_allowlist.sh` added. 191 tests green, gate clean.
+- Principal-gated (surfaced, not forced): live `agy`/`hermes` install on the shared VM (auto-classifier refuses external-installer-as-root on multi-tenant VM — supply-chain caution); D2 Telegram/WhatsApp→VM-Hermes bridge needs a new `ssh-vm` inputAdapter in the LIVE `~/.claude/PAI` RemoteCodeInputRouter (not blind-edited).
