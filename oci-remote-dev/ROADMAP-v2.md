@@ -186,15 +186,21 @@ Goal: manage developers, services, and budgets without SSH.
 
 ---
 
-## Phase 5 — Autonomous Agent Workflows (stretch)
+## Phase 5 — Autonomous Agent Workflows (done)
 
-Goal: scheduled / triggered agent jobs that run on the VM under a developer's identity.
+Scheduled agent jobs that run on the VM under a developer's identity.
 
-- **Job runner** — systemd-timer or cron-backed agent jobs (e.g. nightly dependency
-  audit, PR triage) executing as the owning UNIX user, logged to the observability sink.
-- **Approval queue** — destructive job outputs land in a review queue surfaced on the
-  dashboard before anything is applied.
-- **Toggle:** `ENABLE_AGENT_JOBS=true`.
+**Delivered:**
+- ✅ **Job runner** — `agent-job` defines a prompt + project + cadence; a per-user
+  `agent-jobs.timer` ticks every 5 min and runs due jobs **non-interactively** as that
+  developer (`claude -p`, `codex exec`, …). Runs are logged (`~/.agentctl/jobs.jsonl`,
+  per-job `*.last.log`) and completion fires the notification ring → visible on the board.
+  Pure schedule logic (`is_due`/`due_jobs`), 9 tests.
+- ✅ **Safety is inherited, not rebuilt** — jobs run under the same PreToolUse guardrail
+  (destructive calls blocked/held) and per-UNIX-user sandbox, so an unattended job can't
+  quietly do something dangerous. The guardrail *is* the gate; a held `ask` waits for the
+  developer on next attach.
+- **Toggle:** `enable_agent_jobs` (default true).
 
 ---
 
