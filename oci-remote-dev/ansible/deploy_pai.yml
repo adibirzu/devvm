@@ -18,6 +18,7 @@
   vars:
     install_pai: true
     install_antigravity: false
+    install_hermes: false
     pai_encrypt_memory: true
     developers: []
   tasks:

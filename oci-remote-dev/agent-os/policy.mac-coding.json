@@ -1,0 +1,18 @@
+{
+  "_comment": "Profile B1 — Personal Mac (coding context). Matches guardrail.py schema. Workspace-scoped: the coding agent works in the project dir, NOT full $HOME, and is AIR-GAPPED from home-automation tools + credentials. Keep this context's secrets in macOS Keychain (apiKeyHelper), never plaintext dotfiles. Point the PAI PreToolUse hook at this policy for the coding DA on the Mac.",
+  "allowed_write_roots": ["~/dev", "~/code", "~/Projects", "/tmp"],
+  "rules": [
+    {"id": "rm-rf-root", "action": "deny", "tool": "Bash", "command_regex": "rm\\s+-[a-z]*r[a-z]*f?\\s+(/|~|\\$HOME|/\\*|--no-preserve-root)", "reason": "Catastrophic recursive delete blocked."},
+    {"id": "power", "action": "deny", "tool": "Bash", "command_regex": "\\b(shutdown|reboot|halt)\\b", "reason": "Power-state change blocked."},
+    {"id": "fork-bomb", "action": "deny", "tool": "Bash", "command_regex": ":\\s*\\(\\s*\\)\\s*\\{\\s*:\\s*\\|\\s*:", "reason": "Fork bomb blocked."},
+    {"id": "force-push-protected", "action": "deny", "tool": "Bash", "command_regex": "git\\s+push\\b.*(--force\\b|-f\\b).*\\b(main|master)\\b", "reason": "Force-push to protected branch blocked."},
+    {"id": "pipe-to-shell", "action": "deny", "tool": "Bash", "command_regex": "(curl|wget)\\s+[^|]*\\|\\s*(bash|sh|zsh)\\b", "reason": "Pipe remote script to shell blocked."},
+    {"id": "home-automation-airgap", "action": "deny", "tool": "Bash", "command_regex": "\\b(homeassistant|hass|homekit|hubitat|smartthings|home-assistant)\\b", "reason": "Coding context must NOT reach home-automation (lethal-trifecta air-gap)."},
+    {"id": "keychain-dump", "action": "deny", "tool": "Bash", "command_regex": "security\\s+(find-generic-password|find-internet-password|dump-keychain)", "reason": "Keychain credential extraction blocked."},
+    {"id": "secret-read", "action": "ask", "tool": "*", "path_regex": "(/\\.ssh/id_|\\.pem$|\\.key$|(^|/)\\.env$|/\\.aws/credentials|/\\.config/gcloud|age\\.key$)", "reason": "Secret-file access — keep secrets in Keychain; confirm."},
+    {"id": "global-install", "action": "ask", "tool": "Bash", "command_regex": "\\b(brew|npm\\s+install\\s+-g|pip\\d?\\s+install|gem\\s+install)\\b", "reason": "Global package install — supply-chain risk, confirm."},
+    {"id": "git-push", "action": "ask", "tool": "Bash", "command_regex": "git\\s+push\\b", "reason": "Outbound push — confirm target + branch."},
+    {"id": "outbound-transfer", "action": "ask", "tool": "Bash", "command_regex": "(scp|rsync|sftp|curl\\s+-T)\\s+", "reason": "Outbound file transfer — confirm."},
+    {"id": "write-outside-roots", "action": "ask", "tool": "Write,Edit,MultiEdit,NotebookEdit", "path_outside_roots": true, "reason": "Writing outside the project workspace — confirm."}
+  ]
+}

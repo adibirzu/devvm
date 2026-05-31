@@ -1,0 +1,16 @@
+{
+  "_comment": "Profile B2 — Personal Mac (home-management context). PHYSICAL WORLD. Matches guardrail.py schema. Air-gapped from the coding context (separate agent identity, no coding credentials, no dev tooling). Tiered physical-action policy: reads auto (allow_default), lights/climate/media ask (T2 one-tap), LOCKS/ALARM/GARAGE/CAMERAS deny-unless-typed-confirm (T3). Point the home-management DA's PreToolUse hook here.",
+  "allowed_write_roots": ["~/.homestate", "/tmp"],
+  "rules": [
+    {"id": "t3-lock", "action": "deny", "tool": "*", "command_regex": "(unlock|lock)\\b[^\\n]*\\b(door|deadbolt|lock)\\b[^\\n]*(--yes|--force|-y|auto)", "reason": "Lock change is T3 — never auto/forced; requires the principal's typed-yes per action."},
+    {"id": "t3-alarm", "action": "deny", "tool": "*", "command_regex": "(disarm|disable|arm)\\b[^\\n]*(alarm|security[_\\s-]?system)", "reason": "Alarm state is T3 — typed-yes per action only."},
+    {"id": "t3-garage", "action": "deny", "tool": "*", "command_regex": "(open|close)\\b[^\\n]*garage", "reason": "Garage is T3 — typed-yes per action only."},
+    {"id": "t3-camera", "action": "deny", "tool": "*", "command_regex": "(disable|stop|delete)\\b[^\\n]*(camera|recording|surveillance)", "reason": "Camera/recording disable is T3."},
+    {"id": "no-dev-tooling", "action": "deny", "tool": "Bash", "command_regex": "\\b(git|npm|pip\\d?|brew|codex|claude|agy|hermes|ssh|scp)\\b", "reason": "Home context must NOT run coding/dev tooling (air-gap from coding)."},
+    {"id": "no-coding-secrets", "action": "deny", "tool": "*", "path_regex": "(/\\.ssh/|(^|/)\\.env$|credentials|age\\.key$)", "reason": "Home context must not read coding secrets."},
+    {"id": "t2-climate", "action": "ask", "tool": "*", "command_regex": "(set|turn|adjust)\\b[^\\n]*(thermostat|climate|heat|cool|temperature)", "reason": "Climate change — T2 one-tap confirm."},
+    {"id": "t2-lights", "action": "ask", "tool": "*", "command_regex": "(turn|set|dim|toggle)\\b[^\\n]*(light|lamp|scene|switch|plug)", "reason": "Lights/scene — T2 one-tap confirm."},
+    {"id": "t2-media", "action": "ask", "tool": "*", "command_regex": "(play|pause|set)\\b[^\\n]*(media|volume|speaker|tv)", "reason": "Media — T2 one-tap confirm."}
+  ],
+  "_notes": "allow_default covers read-only telemetry (sensor/temperature/occupancy/lock-state QUERIES = T1 auto). Any WRITE matches a rule above. T3 deny rules are the never-autonomous tier: the matching tools require the principal's typed-yes confirmation at the channel layer (Telegram/iMessage tier-3); the guardrail refuses any auto/forced variant outright."
+}
