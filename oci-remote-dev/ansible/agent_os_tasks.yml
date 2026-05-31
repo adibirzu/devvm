@@ -79,3 +79,52 @@
     owner: root
     group: developers
     mode: '0755'
+
+# --- Read-only fleet control-plane API (Phase 4 Task 1) ---
+- name: Agent-OS | Install the control-plane API
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/control_plane.py"
+    dest: /usr/local/bin/control-plane
+    owner: root
+    group: developers
+    mode: '0755'
+
+- name: Agent-OS | control-plane systemd service (VPN-only read-only API)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/control-plane.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Agentic dev OS read-only fleet control-plane API
+      After=network-online.target multillm-gateway.service
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      ExecStart=/usr/local/bin/control-plane --host {{ wg_server_ip | default('10.200.200.1') }} \
+        --port {{ control_plane_port | default(8082) }} \
+        --gateway http://{{ wg_server_ip | default('10.200.200.1') }}:{{ multillm_gateway_port | default(8080) }} \
+        --home-root /home
+      Restart=always
+      RestartSec=5
+      NoNewPrivileges=true
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Agent-OS | Restrict the control-plane port to the WireGuard subnet
+  ansible.builtin.ufw:
+    rule: allow
+    from_ip: "{{ wg_network | default('10.200.200.0/24') }}"
+    port: "{{ control_plane_port | default(8082) | string }}"
+    proto: tcp
+
+- name: Agent-OS | Enable + start the control-plane API
+  ansible.builtin.systemd:
+    name: control-plane.service
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  ignore_errors: true
