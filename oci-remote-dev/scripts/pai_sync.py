@@ -173,7 +173,10 @@ def cmd_push(args: argparse.Namespace) -> int:
             continue
         out = encrypted_target(src, repo, base)
         # ISC-16: the encrypted blob lands INSIDE the repo, never beside plaintext.
-        assert is_within(out, repo), "refusing: encrypted target escaped the repo"
+        # Explicit raise (not assert) — this is a security boundary and must hold
+        # even under `python -O`, which strips asserts.
+        if not is_within(out, repo):
+            raise SystemExit(f"refusing: encrypted target escaped the repo: {out}")
         tar = subprocess.Popen(
             ["tar", "-C", str(src.parent), "-cf", "-", src.name],
             stdout=subprocess.PIPE,
