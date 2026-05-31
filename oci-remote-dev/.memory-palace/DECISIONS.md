@@ -34,6 +34,14 @@ Append-only. Capture the rationale the code can't.
   Why: decoupling the agent process from the SSH/WG client is what makes work survive
   disconnects and resumable on reconnect. Paired with `loginctl enable-linger` and mosh.
 
+- **2026-05-31 — Tool guardrails live in the agent's PreToolUse hook, not the gateway.**
+  Why: MCP tool calls (and Bash/Write/etc.) are executed by the agent; the MultiLLM
+  gateway only sees LLM completions, so "gateway middleware" can't intercept tool calls.
+  Claude Code's PreToolUse hook fires before any tool runs and can deny/ask/allow — the
+  correct, per-user enforcement point. `guardrail.py` is the policy engine; `guardrail-hook`
+  emits the permissionDecision, audit-logs, and rings on deny/ask. Defense in depth: the
+  OCI MCP server is read-only by construction (verb allowlist), not just by policy.
+
 - **2026-05-31 — Per-account GitHub identity enforced via env vars, not just config.**
   Why: in shared `/opt/shared-dev` repos the `.git/` is shared, so a repo-level
   `user.email` set by one developer would misattribute everyone else. `GIT_AUTHOR_*`/

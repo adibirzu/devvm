@@ -52,6 +52,40 @@ def recent_notifications(lines: List[str], now_epoch: float, window_sec: int = N
     return out
 
 
+GUARDRAIL_WINDOW_SEC = 3600  # show the last hour of guardrail decisions on the board
+
+
+def recent_guardrail(lines: List[str], now_epoch: float, window_sec: int = GUARDRAIL_WINDOW_SEC) -> List[Dict[str, Any]]:
+    """Parse guardrail.jsonl, keeping recent deny/ask decisions (allow is noise)."""
+    out: List[Dict[str, Any]] = []
+    for ln in lines:
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            ev = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        if ev.get("action") in ("deny", "ask") and now_epoch - _parse_iso(ev.get("ts", "")) <= window_sec:
+            out.append(ev)
+    return out
+
+
+def summarize_guardrail(events_by_user: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
+    """Flatten recent guardrail events into a board section + counts."""
+    flat: List[Dict[str, Any]] = []
+    denied = asked = 0
+    for user, evs in events_by_user.items():
+        for e in evs:
+            flat.append({**e, "user": user})
+            if e.get("action") == "deny":
+                denied += 1
+            elif e.get("action") == "ask":
+                asked += 1
+    flat.sort(key=lambda e: e.get("ts", ""), reverse=True)
+    return {"recent": flat[:12], "denied": denied, "asked": asked}
+
+
 def apply_notifications(developers: List[Dict[str, Any]], notifs_by_user: Dict[str, List[Dict[str, Any]]]) -> int:
     """Annotate sessions/developers with needs_input from recent notifications.
 
@@ -175,16 +209,15 @@ def discover_developers(home_root: Path) -> List[str]:
     return sorted(p.name for p in home_root.iterdir() if (p / ".agentctl").is_dir())
 
 
-def _read_notifications(home_root: Path, developers: List[str], now_epoch: float) -> Dict[str, List[Dict[str, Any]]]:
-    notifs: Dict[str, List[Dict[str, Any]]] = {}
+def _read_feed(home_root: Path, developers: List[str], now_epoch: float, filename: str, parser) -> Dict[str, List[Dict[str, Any]]]:
+    out: Dict[str, List[Dict[str, Any]]] = {}
     for user in developers:
-        feed = home_root / user / ".agentctl" / "notifications.jsonl"
+        feed = home_root / user / ".agentctl" / filename
         if feed.exists():
-            lines = feed.read_text(encoding="utf-8", errors="replace").splitlines()
-            notifs[user] = recent_notifications(lines, now_epoch)
+            out[user] = parser(feed.read_text(encoding="utf-8", errors="replace").splitlines(), now_epoch)
         else:
-            notifs[user] = []
-    return notifs
+            out[user] = []
+    return out
 
 
 def build(developers: List[str], home_root: Path, gateway: Optional[str]) -> Dict[str, Any]:
@@ -195,14 +228,17 @@ def build(developers: List[str], home_root: Path, gateway: Optional[str]) -> Dic
         live[user] = live_sessions_for(user, str(agentctl / "tmux.sock"))
     costs = fetch_costs(gateway) if gateway else {}
     now_epoch = datetime.datetime.now(datetime.timezone.utc).timestamp()
-    notifs = _read_notifications(home_root, developers, now_epoch)
-    return build_with(per_user, live, costs, notifs)
+    notifs = _read_feed(home_root, developers, now_epoch, "notifications.jsonl", recent_notifications)
+    guardrail = _read_feed(home_root, developers, now_epoch, "guardrail.jsonl", recent_guardrail)
+    return build_with(per_user, live, costs, notifs, guardrail)
 
 
-def build_with(per_user, live, costs, notifs=None) -> Dict[str, Any]:
+def build_with(per_user, live, costs, notifs=None, guardrail=None) -> Dict[str, Any]:
     board = merge_board(per_user, live, costs)
     ringing = apply_notifications(board["developers"], notifs or {})
     board["totals"]["needs_input"] = ringing
+    board["guardrail"] = summarize_guardrail(guardrail or {})
+    board["totals"]["blocked"] = board["guardrail"]["denied"]
     return board
 
 

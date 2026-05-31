@@ -290,6 +290,50 @@ the fastest way back into flow after the tunnel drops.
 
 ---
 
+## 🛡️ Agent-OS — Tool Guardrails & Governance
+
+Agents run with real tools; Agent-OS governs what they're allowed to do.
+
+### Guardrails (PreToolUse policy)
+A Claude Code **`PreToolUse` hook** evaluates every tool call **before it runs** and
+can **deny**, **ask** (require confirmation), or **allow** — the correct enforcement
+point, since MCP tool calls execute in the agent, not the gateway.
+
+```bash
+guardrail --log              # audit trail of recent decisions
+guardrail --dump-policy      # the active rules (also at /etc/agent-os/policy.json)
+```
+
+The default policy **denies** catastrophic shell (`rm -rf /`, `mkfs`, `dd` to disk,
+fork bombs, `shutdown`, force-push to `main`), **asks** for cloud/cluster mutations
+(`oci/aws/gcloud … delete`, `terraform destroy`, `kubectl delete`), destructive SQL,
+system installs, secret-file access, and writes outside home/shared/tmp — and allows
+everything else. Edit `/etc/agent-os/policy.json` to tune. Every decision is
+audit-logged; deny/ask also fire the notification ring and show on the board's
+🛡️ Guardrail panel.
+
+### Central MCP tool registry
+One approved-servers source (`/opt/agent-os/registry.json`) generates each developer's
+`~/.claude/.mcp.json` — so the fleet exposes one governed tool surface instead of
+hand-maintained configs.
+
+```bash
+mcp-registry list            # approved servers
+mcp-registry apply           # (re)generate ~/.claude/.mcp.json (merge-safe)
+```
+
+Re-applying **preserves your personal/experimental servers** and updates the approved
+ones. Disabled registry entries are removed.
+
+### OCI read-only MCP server
+`oci-readonly` lets agents inspect tenancy/compartment/instance state (list/get) with
+**no ability to mutate** — every tool maps to a fixed read-only `oci … list|get`, a
+read-only verb allowlist refuses anything else. Defense in depth under the guardrail.
+
+> Toggle the whole layer with `install_agent_os` (default true).
+
+---
+
 ## 🌐 WireGuard VPN & Mac Routing
 
 By design, this is a **split tunnel**: only the `10.200.200.0/24` VPN subnet is routed through WireGuard. Your Mac keeps its normal internet path and its normal DNS.
@@ -391,6 +435,9 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | Live multi-agent status board (`/agents.html`, `agent-status` timer) | ✅ Implemented |
 | Project-status surface — per-project git state + active agents | ✅ Implemented |
 | Notification ring — agent-needs-input alerts + browser/phone push | ✅ Implemented |
+| Tool guardrails — PreToolUse deny/ask policy + audit + board panel | ✅ Implemented |
+| Central MCP tool registry → per-user `.mcp.json` (merge-safe) | ✅ Implemented |
+| OCI read-only MCP server (read-only verb allowlist) | ✅ Implemented |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
 

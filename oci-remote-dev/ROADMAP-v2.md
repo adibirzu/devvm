@@ -128,22 +128,26 @@ to the calling UNIX user and `shared`-scope writes gated on `developers` members
 
 ---
 
-## Phase 3 — Central MCP Tool Registry & Guardrails
+## Phase 3 — Central MCP Tool Registry & Guardrails (done)
 
-Goal: a curated, governed set of MCP tools available to every agent, with policy.
+A curated, governed tool surface for every agent, with policy enforced at the agent.
 
-- **Tool registry** — a single `/opt/agent-os/registry.json` describing approved MCP
-  servers (multillm, context bus, git ops, OCI read-only ops). Per-user `.mcp.json`
-  is generated from the registry instead of hand-maintained.
-- **Policy/guardrail layer** — a gateway middleware that can deny or require
-  confirmation for sensitive tool calls (e.g. `oci ... delete`, writes outside
-  `~/shared-workspace`). Decisions logged to the observability sink.
-- **OCI read-only agent tools** — wrap `scripts/oci_sdk_ops.py` as an MCP server so
-  agents can inspect tenancy/instance state without shell access to credentials.
-- **Toggle:** `ENABLE_TOOL_REGISTRY=true`, `ENABLE_GUARDRAILS=true`.
+**Architecture correction:** guardrails live in the agent's **`PreToolUse` hook**, not
+"gateway middleware" — MCP tool calls are executed by the agent, so the gateway never
+sees them. The hook is the correct (and only) enforcement point, and it's per-user.
 
-**Guardrail default:** deny-by-default for destructive verbs; allow read + scoped
-writes. Mirrors the tenancy-boundary rules in the global operating instructions.
+**Delivered:**
+- ✅ **Guardrail policy engine** (`guardrail.py` + `guardrail-hook`) — deny/ask/allow
+  with a data-driven default policy (`/etc/agent-os/policy.json`). Denies catastrophic
+  shell + force-push-to-protected; asks for cloud/cluster/db mutations, system installs,
+  secret access, and out-of-root writes. Audit-logged; deny/ask ring the board.
+- ✅ **MCP tool registry** (`registry.json` + `mcp-registry`) — generates each user's
+  `~/.claude/.mcp.json` (merge-safe: preserves personal servers, removes disabled ones).
+- ✅ **OCI read-only MCP server** (`oci_mcp_server.py`) — stdio JSON-RPC; list/get only,
+  enforced by a read-only verb allowlist. Registered as `oci-readonly`.
+- ✅ **Audit surface** — `guardrail --log` + a 🛡️ Guardrail panel on the board
+  (recent deny/ask, blocked count).
+- **Toggle:** `install_agent_os` (default true).
 
 ---
 

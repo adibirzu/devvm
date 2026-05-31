@@ -3,6 +3,8 @@
 What's in flight. **Read this first on reconnect.** Move finished items to `SESSION-LOG.md`.
 
 ## Recently shipped
+- [x] Phase 3 (Agent-OS): tool guardrails (PreToolUse deny/ask policy + audit + board
+      panel), central MCP registry → per-user `.mcp.json`, OCI read-only MCP server.
 - [x] Mobile-friendly board; notification ring (agent-needs-input → pulsing ring +
       browser/phone push via Claude Notification hook → `agent-notify` feed).
 

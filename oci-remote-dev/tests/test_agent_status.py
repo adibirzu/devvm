@@ -9,8 +9,10 @@ from scripts.agent_status import (
     apply_notifications,
     merge_board,
     parse_meta_dir,
+    recent_guardrail,
     recent_notifications,
     state_from_live,
+    summarize_guardrail,
 )
 
 
@@ -120,6 +122,38 @@ class TestNotifications(unittest.TestCase):
         self.assertEqual(apply_notifications(devs, {}), 0)
         self.assertFalse(devs[0]["needs_input"])
         self.assertFalse(devs[0]["sessions"][0]["needs_input"])
+
+
+class TestGuardrailAudit(unittest.TestCase):
+    NOW = 1_700_000_600.0
+
+    def _line(self, action, secs_ago, summary="$ rm -rf /"):
+        import datetime
+        ts = datetime.datetime.fromtimestamp(self.NOW - secs_ago, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return f'{{"ts":"{ts}","tool":"Bash","action":"{action}","rule":"x","reason":"r","summary":"{summary}"}}'
+
+    def test_recent_keeps_deny_ask_drops_allow_and_old(self) -> None:
+        lines = [self._line("deny", 60), self._line("ask", 120),
+                 self._line("allow", 30), self._line("deny", 99999)]
+        out = recent_guardrail(lines, self.NOW, window_sec=3600)
+        actions = sorted(e["action"] for e in out)
+        self.assertEqual(actions, ["ask", "deny"])   # allow excluded, old deny excluded
+
+    def test_summarize_counts_and_flattens(self) -> None:
+        events = {
+            "adi": [{"action": "deny", "ts": "2026-05-31T10:00:00Z"}],
+            "royce": [{"action": "ask", "ts": "2026-05-31T11:00:00Z"},
+                      {"action": "deny", "ts": "2026-05-31T09:00:00Z"}],
+        }
+        s = summarize_guardrail(events)
+        self.assertEqual(s["denied"], 2)
+        self.assertEqual(s["asked"], 1)
+        self.assertEqual(s["recent"][0]["ts"], "2026-05-31T11:00:00Z")  # newest first
+        self.assertEqual(s["recent"][0]["user"], "royce")
+
+    def test_summarize_empty(self) -> None:
+        s = summarize_guardrail({})
+        self.assertEqual((s["denied"], s["asked"], s["recent"]), (0, 0, []))
 
 
 if __name__ == "__main__":
