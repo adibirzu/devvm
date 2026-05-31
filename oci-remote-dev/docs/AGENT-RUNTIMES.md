@@ -5,8 +5,10 @@ Adding a runtime is a **JSON edit, not a code change**.
 
 - Source of truth: `agent-os/runtimes.json` → deployed to `/opt/agent-os/runtimes.json`
 - CLI: `pai-runtimes` (`scripts/pai_runtime_registry.py`)
-- Shipped runtimes: `claude`, `codex`, `gemini`, **`antigravity` (alias `agy`)**,
+- Shipped runtimes: `claude`, `codex`, **`antigravity` (aliases `agy`, `gemini`)**,
   **`hermes`**, **`nanoclaw` (aliases `nano-claw`, `openclaw`)**
+- **Antigravity (AGY) replaces the Google Gemini CLI** as the Google-family runtime.
+  The `gemini` alias routes to `antigravity`, so existing `gemini` call sites keep working.
 
 ## Two guarantees every runtime inherits (and cannot opt out of)
 

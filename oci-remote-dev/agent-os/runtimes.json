@@ -27,22 +27,10 @@
       "agentctl_compatible": true
     },
     {
-      "name": "gemini",
-      "enabled": true,
-      "description": "Google Gemini CLI.",
-      "kind": "cli",
-      "interactive_template": ["gemini"],
-      "exec_template": ["gemini", "-p", "{prompt}"],
-      "gateway_routed": true,
-      "gateway_env": "GOOGLE_GEMINI_BASE_URL",
-      "guardrail_scope": "default",
-      "agentctl_compatible": true
-    },
-    {
       "name": "antigravity",
-      "aliases": ["agy"],
+      "aliases": ["agy", "gemini"],
       "enabled": true,
-      "description": "Google Antigravity agentic CLI (AGY). Detected via .antigravitycli/ in the repo. Command path is a placeholder until the principal supplies the exact binary/flags.",
+      "description": "Google Antigravity agentic CLI (AGY) — the Google-family runtime, REPLACES the Gemini CLI. Detected via .antigravitycli/ in the repo. Command path is a placeholder until the exact binary/flags are supplied.",
       "kind": "cli",
       "interactive_template": ["antigravity"],
       "exec_template": ["antigravity", "run", "--prompt", "{prompt}"],
