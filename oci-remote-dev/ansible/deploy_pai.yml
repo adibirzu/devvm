@@ -1,0 +1,25 @@
+---
+# deploy_pai.yml — thin playbook wrapper that runs ONLY the Phase 6 PAI layer
+# (PAI CLIs + runtime registry, and optionally the Antigravity/AGY install) against
+# an existing VM, without the full provision in playbook.yml. Idempotent; re-runnable.
+#
+#   ansible-playbook -i '<VM_IP>,' -u devuser --private-key ~/.ssh/<key> \
+#     -e "install_pai=true install_antigravity=false developers=[]" \
+#     ansible/deploy_pai.yml
+#
+# Pass a real `developers` list (e.g. -e @configs/ansible_vars.json) to also run
+# per-user pai-bootstrap; an empty list installs the shared CLIs + registry only.
+# Set install_antigravity=true to also install the `agy` CLI (downloads an external
+# installer — review/checksum-pin via agy_installer_sha256 first).
+
+- name: Deploy Phase 6 PAI layer
+  hosts: all
+  become: true
+  vars:
+    install_pai: true
+    install_antigravity: false
+    pai_encrypt_memory: true
+    developers: []
+  tasks:
+    - name: Include PAI tasks
+      ansible.builtin.include_tasks: pai_tasks.yml
