@@ -681,6 +681,22 @@
         proto: tcp
       when: install_multillm_gateway | default(true)
 
+    - name: Post-deploy verification (informational — warnings don't fail the deploy)
+      ansible.builtin.command:
+        cmd: /usr/local/bin/verify-agent-os
+      environment:
+        WG_SERVER_IP: "{{ wg_server_ip | default('10.200.200.1') }}"
+        MULTILLM_GATEWAY_PORT: "{{ multillm_gateway_port | default(8080) | string }}"
+      register: verify_out
+      changed_when: false
+      failed_when: false
+      when: install_agent_os | default(true)
+
+    - name: Show verification summary
+      ansible.builtin.debug:
+        msg: "{{ verify_out.stdout_lines | default(['verification skipped']) }}"
+      when: install_agent_os | default(true)
+
   handlers:
     - name: Restart multillm-gateway
       ansible.builtin.systemd:

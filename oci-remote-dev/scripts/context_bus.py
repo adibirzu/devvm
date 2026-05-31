@@ -48,7 +48,9 @@ def tenant_for(user: str, shared: bool, all_scopes: bool = False) -> str:
     return SHARED_SCOPE if shared else user
 
 
-def build_put_payload(title: str, content: str, category: str, project: str, source_llm: str = "cli") -> Dict[str, Any]:
+def build_put_payload(
+    title: str, content: str, category: str, project: str, source_llm: str = "cli"
+) -> Dict[str, Any]:
     return {
         "title": title,
         "content": content,
@@ -73,8 +75,14 @@ def format_memory_rows(rows: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _request(method: str, url: str, api_key: str = "", body: Optional[dict] = None,
-             tenant: str = "", timeout: float = 5.0) -> Any:
+def _request(
+    method: str,
+    url: str,
+    api_key: str = "",
+    body: Optional[dict] = None,
+    tenant: str = "",
+    timeout: float = 5.0,
+) -> Any:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Accept": "application/json"}
     if body is not None:
@@ -84,7 +92,9 @@ def _request(method: str, url: str, api_key: str = "", body: Optional[dict] = No
     if tenant:
         headers["X-MultiLLM-Tenant"] = tenant
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted VPN URL)
+    with urllib.request.urlopen(
+        req, timeout=timeout
+    ) as resp:  # noqa: S310 (trusted VPN URL)
         raw = resp.read().decode("utf-8")
         return json.loads(raw) if raw else {}
 
@@ -94,31 +104,66 @@ def _qs(params: Dict[str, Any]) -> str:
     return ("?" + urllib.parse.urlencode(clean)) if clean else ""
 
 
-def cmd_put(args: argparse.Namespace, base: str, key: str, project: str, tenant: str = "") -> int:
+def cmd_put(
+    args: argparse.Namespace, base: str, key: str, project: str, tenant: str = ""
+) -> int:
     payload = build_put_payload(args.title, args.content, args.category, project)
-    res = _request("POST", base + "/api/memory", api_key=key, body=payload, tenant=tenant)
+    res = _request(
+        "POST", base + "/api/memory", api_key=key, body=payload, tenant=tenant
+    )
     print(f"stored [{str(res.get('id', '?'))[:8]}] in {project}: {args.title}")
     return 0
 
 
-def cmd_search(args: argparse.Namespace, base: str, key: str, project: Optional[str], tenant: str = "") -> int:
-    url = base + "/api/memory/search" + _qs({"q": args.query, "project": project, "limit": args.limit})
+def cmd_search(
+    args: argparse.Namespace,
+    base: str,
+    key: str,
+    project: Optional[str],
+    tenant: str = "",
+) -> int:
+    url = (
+        base
+        + "/api/memory/search"
+        + _qs({"q": args.query, "project": project, "limit": args.limit})
+    )
     res = _request("GET", url, api_key=key, tenant=tenant)
     rows = res if isinstance(res, list) else res.get("results", res.get("memories", []))
     print(format_memory_rows(rows))
     return 0
 
 
-def cmd_list(args: argparse.Namespace, base: str, key: str, project: Optional[str], tenant: str = "") -> int:
-    url = base + "/api/memory" + _qs({"project": project, "category": args.category, "limit": args.limit})
+def cmd_list(
+    args: argparse.Namespace,
+    base: str,
+    key: str,
+    project: Optional[str],
+    tenant: str = "",
+) -> int:
+    url = (
+        base
+        + "/api/memory"
+        + _qs({"project": project, "category": args.category, "limit": args.limit})
+    )
     res = _request("GET", url, api_key=key, tenant=tenant)
     rows = res if isinstance(res, list) else res.get("memories", [])
     print(format_memory_rows(rows))
     return 0
 
 
-def cmd_rm(args: argparse.Namespace, base: str, key: str, project: Optional[str], tenant: str = "") -> int:
-    _request("DELETE", base + f"/api/memory/{urllib.parse.quote(args.id)}", api_key=key, tenant=tenant)
+def cmd_rm(
+    args: argparse.Namespace,
+    base: str,
+    key: str,
+    project: Optional[str],
+    tenant: str = "",
+) -> int:
+    _request(
+        "DELETE",
+        base + f"/api/memory/{urllib.parse.quote(args.id)}",
+        api_key=key,
+        tenant=tenant,
+    )
     print(f"deleted {args.id}")
     return 0
 
@@ -134,11 +179,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Common options live on a parent parser so they work *after* the subcommand
     # (e.g. `context search foo --shared`), which is how people actually type them.
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--gateway", default=DEFAULT_GATEWAY, help=f"Gateway base URL (default {DEFAULT_GATEWAY})")
-    common.add_argument("--shared", action="store_true", help="Use the cross-developer 'shared' namespace")
-    common.add_argument("--user", default=getpass.getuser(), help="Override the developer namespace (default: $USER)")
+    common.add_argument(
+        "--gateway",
+        default=DEFAULT_GATEWAY,
+        help=f"Gateway base URL (default {DEFAULT_GATEWAY})",
+    )
+    common.add_argument(
+        "--shared",
+        action="store_true",
+        help="Use the cross-developer 'shared' namespace",
+    )
+    common.add_argument(
+        "--user",
+        default=getpass.getuser(),
+        help="Override the developer namespace (default: $USER)",
+    )
 
-    parser = argparse.ArgumentParser(prog="context", description="Shared MultiLLM memory/context bus client.")
+    parser = argparse.ArgumentParser(
+        prog="context", description="Shared MultiLLM memory/context bus client."
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_put = sub.add_parser("put", parents=[common], help="Store a memory")
@@ -149,12 +208,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_search = sub.add_parser("search", parents=[common], help="Search memories")
     p_search.add_argument("query")
     p_search.add_argument("--limit", type=int, default=10)
-    p_search.add_argument("--all", dest="all_scopes", action="store_true", help="Search across all namespaces")
+    p_search.add_argument(
+        "--all",
+        dest="all_scopes",
+        action="store_true",
+        help="Search across all namespaces",
+    )
 
     p_list = sub.add_parser("list", parents=[common], help="List recent memories")
     p_list.add_argument("--limit", type=int, default=20)
     p_list.add_argument("--category", default="")
-    p_list.add_argument("--all", dest="all_scopes", action="store_true", help="List across all namespaces")
+    p_list.add_argument(
+        "--all",
+        dest="all_scopes",
+        action="store_true",
+        help="List across all namespaces",
+    )
 
     p_rm = sub.add_parser("rm", parents=[common], help="Delete a memory by id")
     p_rm.add_argument("id")
@@ -170,9 +239,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return handlers[args.command](args, base, key, project, tenant)
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
-            print("error: write rejected — set MULTILLM_API_KEY (see /etc/multillm/collector.env).", file=sys.stderr)
+            print(
+                "error: write rejected — set MULTILLM_API_KEY (see /etc/multillm/collector.env).",
+                file=sys.stderr,
+            )
         else:
-            print(f"error: gateway returned HTTP {exc.code}: {exc.reason}", file=sys.stderr)
+            print(
+                f"error: gateway returned HTTP {exc.code}: {exc.reason}",
+                file=sys.stderr,
+            )
         return 1
     except urllib.error.URLError as exc:
         print(f"error: cannot reach gateway at {base} ({exc.reason}).", file=sys.stderr)

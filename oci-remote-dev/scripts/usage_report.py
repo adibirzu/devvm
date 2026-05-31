@@ -31,11 +31,15 @@ DEFAULT_GATEWAY = os.environ.get("MULTILLM_GATEWAY", "http://localhost:8080")
 
 def _fetch_json(url: str, timeout: float) -> Dict[str, Any]:
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted VPN URL)
+    with urllib.request.urlopen(
+        req, timeout=timeout
+    ) as resp:  # noqa: S310 (trusted VPN URL)
         return json.loads(resp.read().decode("utf-8"))
 
 
-def fetch_usage(base_url: str, hours: int, project: str = "", timeout: float = 5.0) -> Dict[str, Any]:
+def fetch_usage(
+    base_url: str, hours: int, project: str = "", timeout: float = 5.0
+) -> Dict[str, Any]:
     """Fetch the aggregate usage summary (by model + by project) from the gateway."""
     query = f"/usage?hours={int(hours)}"
     if project:
@@ -43,7 +47,9 @@ def fetch_usage(base_url: str, hours: int, project: str = "", timeout: float = 5
     return _fetch_json(base_url.rstrip("/") + query, timeout)
 
 
-def fetch_team_usage(base_url: str, hours: int, tenant: str = "", timeout: float = 5.0) -> Dict[str, Any]:
+def fetch_team_usage(
+    base_url: str, hours: int, tenant: str = "", timeout: float = 5.0
+) -> Dict[str, Any]:
     """Fetch the per-developer (tenant) team-usage rollup from the gateway."""
     query = f"/api/team-usage?hours={int(hours)}"
     if tenant:
@@ -145,21 +151,25 @@ def evaluate_budgets(
     for user, cap in sorted(budgets.items()):
         used = spend.get(user, 0.0)
         over = used > cap
-        rows.append({
-            "user": user,
-            "cap": cap,
-            "spend": used,
-            "over": over,
-            "remaining": cap - used,
-            "pct": (used / cap * 100.0) if cap > 0 else 0.0,
-        })
+        rows.append(
+            {
+                "user": user,
+                "cap": cap,
+                "spend": used,
+                "over": over,
+                "remaining": cap - used,
+                "pct": (used / cap * 100.0) if cap > 0 else 0.0,
+            }
+        )
     return rows
 
 
 def format_budget_report(rows: List[Dict[str, Any]]) -> str:
     if not rows:
         return "  (no budgets configured — set MULTILLM_USER_BUDGETS)"
-    header = f"  {'DEVELOPER':<20} {'SPEND':>12} {'CAP':>12} {'USED%':>8} {'STATUS':>10}"
+    header = (
+        f"  {'DEVELOPER':<20} {'SPEND':>12} {'CAP':>12} {'USED%':>8} {'STATUS':>10}"
+    )
     lines = [header, "  " + "-" * (len(header) - 2)]
     for r in rows:
         status = "OVER" if r["over"] else "ok"
@@ -173,19 +183,25 @@ def format_budget_report(rows: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def render_budget_report(by_user: List[Dict[str, Any]], budgets: Dict[str, float], hours: int) -> str:
+def render_budget_report(
+    by_user: List[Dict[str, Any]], budgets: Dict[str, float], hours: int
+) -> str:
     rows = evaluate_budgets(by_user, budgets)
     breached = [r["user"] for r in rows if r["over"]]
     summary = (
-        f"  ⚠ over budget: {', '.join(breached)}" if breached else "  ✓ all developers within budget"
+        f"  ⚠ over budget: {', '.join(breached)}"
+        if breached
+        else "  ✓ all developers within budget"
     )
-    return "\n".join([
-        f"MultiLLM budgets — last {hours}h",
-        "=" * 60,
-        format_budget_report(rows),
-        "",
-        summary,
-    ])
+    return "\n".join(
+        [
+            f"MultiLLM budgets — last {hours}h",
+            "=" * 60,
+            format_budget_report(rows),
+            "",
+            summary,
+        ]
+    )
 
 
 def format_user_table(by_user: List[Dict[str, Any]]) -> str:
@@ -208,20 +224,22 @@ def format_user_table(by_user: List[Dict[str, Any]]) -> str:
 def render_team_report(data: Dict[str, Any], hours: int) -> str:
     by_user = data.get("by_user") or []
     totals = data.get("totals") or {}
-    return "\n".join([
-        f"MultiLLM team usage — last {hours}h",
-        "=" * 60,
-        "By developer (tenant):",
-        format_user_table(by_user),
-        "",
-        "Totals:",
-        f"  developers={_fmt_int(totals.get('users'))}  "
-        f"accounts={_fmt_int(totals.get('accounts'))}  "
-        f"requests={_fmt_int(totals.get('requests'))}  "
-        f"in={_fmt_int(totals.get('input_tokens'))}  "
-        f"out={_fmt_int(totals.get('output_tokens'))}  "
-        f"cost={_fmt_cost(totals.get('cost_usd'))}",
-    ])
+    return "\n".join(
+        [
+            f"MultiLLM team usage — last {hours}h",
+            "=" * 60,
+            "By developer (tenant):",
+            format_user_table(by_user),
+            "",
+            "Totals:",
+            f"  developers={_fmt_int(totals.get('users'))}  "
+            f"accounts={_fmt_int(totals.get('accounts'))}  "
+            f"requests={_fmt_int(totals.get('requests'))}  "
+            f"in={_fmt_int(totals.get('input_tokens'))}  "
+            f"out={_fmt_int(totals.get('output_tokens'))}  "
+            f"cost={_fmt_cost(totals.get('cost_usd'))}",
+        ]
+    )
 
 
 def render_report(data: Dict[str, Any], hours: int) -> str:
@@ -246,17 +264,39 @@ def render_report(data: Dict[str, Any], hours: int) -> str:
 
 
 def main(argv: List[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Aggregate MultiLLM gateway usage rollup.")
-    parser.add_argument("--gateway", default=DEFAULT_GATEWAY, help=f"Gateway base URL (default {DEFAULT_GATEWAY})")
-    parser.add_argument("--hours", type=int, default=24, help="Window in hours (default 24)")
-    parser.add_argument("--project", default="", help="Filter to a single project tag (aggregate mode)")
-    parser.add_argument("--team", action="store_true", help="Per-developer rollup from /api/team-usage")
-    parser.add_argument("--tenant", default="", help="Filter team mode to a single developer")
-    parser.add_argument("--budgets", action="store_true",
-                        help="Flag developers over their daily cap (exit 2 if any breach)")
-    parser.add_argument("--budget-spec", default=os.environ.get("MULTILLM_USER_BUDGETS", ""),
-                        help='Caps as "user=usd,user=usd" (default: $MULTILLM_USER_BUDGETS)')
-    parser.add_argument("--json", action="store_true", help="Emit raw JSON instead of a table")
+    parser = argparse.ArgumentParser(
+        description="Aggregate MultiLLM gateway usage rollup."
+    )
+    parser.add_argument(
+        "--gateway",
+        default=DEFAULT_GATEWAY,
+        help=f"Gateway base URL (default {DEFAULT_GATEWAY})",
+    )
+    parser.add_argument(
+        "--hours", type=int, default=24, help="Window in hours (default 24)"
+    )
+    parser.add_argument(
+        "--project", default="", help="Filter to a single project tag (aggregate mode)"
+    )
+    parser.add_argument(
+        "--team", action="store_true", help="Per-developer rollup from /api/team-usage"
+    )
+    parser.add_argument(
+        "--tenant", default="", help="Filter team mode to a single developer"
+    )
+    parser.add_argument(
+        "--budgets",
+        action="store_true",
+        help="Flag developers over their daily cap (exit 2 if any breach)",
+    )
+    parser.add_argument(
+        "--budget-spec",
+        default=os.environ.get("MULTILLM_USER_BUDGETS", ""),
+        help='Caps as "user=usd,user=usd" (default: $MULTILLM_USER_BUDGETS)',
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Emit raw JSON instead of a table"
+    )
     args = parser.parse_args(argv)
 
     use_team = args.team or args.budgets
@@ -266,8 +306,14 @@ def main(argv: List[str] | None = None) -> int:
         else:
             data = fetch_usage(args.gateway, args.hours, args.project)
     except urllib.error.URLError as exc:
-        print(f"error: cannot reach gateway at {args.gateway} ({exc.reason}).", file=sys.stderr)
-        print("Is the multillm-gateway service up? `sudo systemctl status multillm-gateway`", file=sys.stderr)
+        print(
+            f"error: cannot reach gateway at {args.gateway} ({exc.reason}).",
+            file=sys.stderr,
+        )
+        print(
+            "Is the multillm-gateway service up? `sudo systemctl status multillm-gateway`",
+            file=sys.stderr,
+        )
         return 1
     except (json.JSONDecodeError, OSError) as exc:
         print(f"error: bad response from gateway: {exc}", file=sys.stderr)

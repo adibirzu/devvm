@@ -1,0 +1,12 @@
+# Runtime dependencies for the deployer (controller-side).
+# The agent-OS CLIs on the VM (agentctl, palace, usage-report, context, guardrail,
+# control-plane, agent-status, project-status, agent-job, oci_mcp_server) are
+# standard-library only and need nothing here.
+
+# OCI deployment via the Python SDK path (scripts/deploy_sdk.py)
+oci>=2.120
+
+# Multi-cloud deployers shell out to the provider CLIs (oci/aws/gcloud/az) and
+# Ansible; install those separately (see README). PyYAML is used to validate
+# rendered Ansible vars.
+PyYAML>=6.0

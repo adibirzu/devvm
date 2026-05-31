@@ -32,7 +32,9 @@ def load_registry(path: str = REGISTRY_PATH) -> Dict[str, Any]:
 def _subst(value: Any, subs: Dict[str, str]) -> Any:
     """Recursively replace ${VAR} in strings using subs (default: env, then '')."""
     if isinstance(value, str):
-        return _VAR.sub(lambda m: subs.get(m.group(1), os.environ.get(m.group(1), "")), value)
+        return _VAR.sub(
+            lambda m: subs.get(m.group(1), os.environ.get(m.group(1), "")), value
+        )
     if isinstance(value, list):
         return [_subst(v, subs) for v in value]
     if isinstance(value, dict):
@@ -42,14 +44,18 @@ def _subst(value: Any, subs: Dict[str, str]) -> Any:
 
 def render_server(server: Dict[str, Any], subs: Dict[str, str]) -> Dict[str, Any]:
     """Produce the .mcp.json entry body for an approved server."""
-    out: Dict[str, Any] = {"command": _subst(server.get("command", ""), subs),
-                           "args": _subst(server.get("args", []), subs)}
+    out: Dict[str, Any] = {
+        "command": _subst(server.get("command", ""), subs),
+        "args": _subst(server.get("args", []), subs),
+    }
     if server.get("env"):
         out["env"] = _subst(server["env"], subs)
     return out
 
 
-def merge_mcp(existing: Dict[str, Any], registry: Dict[str, Any], subs: Dict[str, str]) -> Dict[str, Any]:
+def merge_mcp(
+    existing: Dict[str, Any], registry: Dict[str, Any], subs: Dict[str, str]
+) -> Dict[str, Any]:
     """Merge approved servers into an existing .mcp.json structure (pure)."""
     result = dict(existing) if existing else {}
     servers = dict(result.get("mcpServers", {}))
@@ -113,7 +119,9 @@ def cmd_validate(reg: Dict[str, Any]) -> int:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    p = argparse.ArgumentParser(description="Generate per-user .mcp.json from the approved MCP registry.")
+    p = argparse.ArgumentParser(
+        description="Generate per-user .mcp.json from the approved MCP registry."
+    )
     p.add_argument("command", choices=["list", "apply", "validate"])
     p.add_argument("--registry", default=REGISTRY_PATH)
     p.add_argument("--config", default=str(Path.home() / ".claude" / ".mcp.json"))

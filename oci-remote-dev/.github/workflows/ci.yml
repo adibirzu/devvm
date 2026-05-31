@@ -17,12 +17,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-level: '3.12'
+          python-version: '3.12'
 
       - name: Install Linting Tools
         run: |
           python -m pip install --upgrade pip
-          pip install ruff black oci
+          pip install ruff black
 
       - name: Check Formatting (Black)
         run: black --check scripts/*.py
@@ -41,5 +41,31 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Validate Shell Scripts
+        # --severity=error fails the build only on real bugs, not style nits.
+        run: shellcheck --severity=error -e SC2002 scripts/*.sh
+
+  test:
+    name: Unit Tests + Security Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test deps
         run: |
-          shellcheck -e SC2002 scripts/*.sh
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt ansible
+
+      - name: Run unit tests
+        run: python -m pytest tests/ -q
+
+      - name: Security gate (no secrets / topology in the tree)
+        run: python3 scripts/security_gate.py --mode full
+
+      - name: Ansible playbook syntax check
+        run: ansible-playbook --syntax-check ansible/playbook.yml

@@ -15,8 +15,6 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
-import json
-import os
 import re
 import shutil
 import subprocess
@@ -25,7 +23,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import oci
 
@@ -489,7 +487,9 @@ def run_cmd(args: List[str], check: bool = True, capture: bool = True) -> str:
 
 
 def run_cmd_no_raise(args: List[str]) -> Tuple[int, str, str]:
-    proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.run(
+        args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
     return proc.returncode, (proc.stdout or ""), (proc.stderr or "")
 
 
@@ -593,7 +593,9 @@ class SDKDeployer:
             return requested
         legacy = self.project_dir / ".env.local"
         if legacy.exists():
-            warn("Using legacy .env.local. Prefer copying .env.example to .env for new deployments.")
+            warn(
+                "Using legacy .env.local. Prefer copying .env.example to .env for new deployments."
+            )
             return legacy
         return requested
 
@@ -608,7 +610,9 @@ class SDKDeployer:
                 f"Invalid developer username '{name}'. Use a Linux-safe name: "
                 "lowercase letter/underscore first, then lowercase letters, digits, underscores, or hyphens."
             )
-        if not str(dev.get("ssh_key", "")).startswith(("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-")):
+        if not str(dev.get("ssh_key", "")).startswith(
+            ("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-")
+        ):
             fail(f"Developer '{name}' has no valid SSH public key configured.")
         return dev
 
@@ -619,41 +623,53 @@ class SDKDeployer:
         compartment_ocid = self._get_env("OCI_COMPARTMENT_OCID")
         region = self.args.region or self._get_env("OCI_REGION", "")
         if not region:
-            cfg = oci.config.from_file(file_location=str(Path(self.args.config_file).expanduser()), profile_name=profile)
+            cfg = oci.config.from_file(
+                file_location=str(Path(self.args.config_file).expanduser()),
+                profile_name=profile,
+            )
             region = cfg.get("region", "")
 
-        ssh_pub = Path(self._get_env("SSH_PUBLIC_KEY_PATH", "~/.ssh/id_rsa.pub")).expanduser()
+        ssh_pub = Path(
+            self._get_env("SSH_PUBLIC_KEY_PATH", "~/.ssh/id_rsa.pub")
+        ).expanduser()
         ssh_priv = Path(str(ssh_pub).removesuffix(".pub")).expanduser()
 
         ad_raw = self._get_env("AVAILABILITY_DOMAIN", "")
         ad_num = int(ad_raw) if ad_raw.strip() else 1
 
         multi_dev_enabled = env_bool(self._get_env("MULTI_DEV_ENABLED", "false"), False)
-        
+
         # Build developers list
         developers = []
-        
+
         # Developer 1 (Admin)
         dev1_name = self._get_env("ADMIN_USERNAME", "devuser")
         dev1_ssh = resolve_ssh_key(str(ssh_pub))
         dev1_wg_ip = self._get_env("WG_CLIENT_IP", "10.200.200.2")
         dev1_port = int(self._get_env("CODE_SERVER_PORT", "8443"))
-        
-        developers.append(self._validate_developer({
-            "name": dev1_name,
-            "ssh_key": dev1_ssh,
-            "wg_ip": dev1_wg_ip,
-            "code_server_port": dev1_port,
-            "private_key": "",
-            "public_key": ""
-        }))
-        
+
+        developers.append(
+            self._validate_developer(
+                {
+                    "name": dev1_name,
+                    "ssh_key": dev1_ssh,
+                    "wg_ip": dev1_wg_ip,
+                    "code_server_port": dev1_port,
+                    "private_key": "",
+                    "public_key": "",
+                }
+            )
+        )
+
         if multi_dev_enabled:
             idx = 2
             while True:
                 dev_name = self._get_env(f"DEV_{idx}_NAME")
                 if not dev_name:
-                    has_more = any(self._get_env(f"DEV_{check_idx}_NAME") for check_idx in range(idx + 1, idx + 3))
+                    has_more = any(
+                        self._get_env(f"DEV_{check_idx}_NAME")
+                        for check_idx in range(idx + 1, idx + 3)
+                    )
                     if not has_more:
                         break
                     idx += 1
@@ -661,14 +677,25 @@ class SDKDeployer:
 
                 dev_ssh_path = self._get_env(f"DEV_{idx}_SSH_KEY_PATH", "")
                 if dev_ssh_path:
-                    developers.append(self._validate_developer({
-                        "name": dev_name,
-                        "ssh_key": resolve_ssh_key(dev_ssh_path),
-                        "wg_ip": self._get_env(f"DEV_{idx}_WG_IP", f"10.200.200.{idx + 1}"),
-                        "code_server_port": int(self._get_env(f"DEV_{idx}_CODE_SERVER_PORT", str(8443 + idx - 1))),
-                        "private_key": "",
-                        "public_key": ""
-                    }))
+                    developers.append(
+                        self._validate_developer(
+                            {
+                                "name": dev_name,
+                                "ssh_key": resolve_ssh_key(dev_ssh_path),
+                                "wg_ip": self._get_env(
+                                    f"DEV_{idx}_WG_IP", f"10.200.200.{idx + 1}"
+                                ),
+                                "code_server_port": int(
+                                    self._get_env(
+                                        f"DEV_{idx}_CODE_SERVER_PORT",
+                                        str(8443 + idx - 1),
+                                    )
+                                ),
+                                "private_key": "",
+                                "public_key": "",
+                            }
+                        )
+                    )
                 idx += 1
 
         return RuntimeConfig(
@@ -701,10 +728,14 @@ class SDKDeployer:
             rdp_port=int(self._get_env("RDP_PORT", "3389")),
             vnc_port=int(self._get_env("VNC_PORT", "5901")),
             code_server_port=int(self._get_env("CODE_SERVER_PORT", "8443")),
-            install_claude_code=env_bool(self._get_env("INSTALL_CLAUDE_CODE", "true"), True),
+            install_claude_code=env_bool(
+                self._get_env("INSTALL_CLAUDE_CODE", "true"), True
+            ),
             install_codex=env_bool(self._get_env("INSTALL_CODEX", "true"), True),
             install_gemini=env_bool(self._get_env("INSTALL_GEMINI", "true"), True),
-            install_code_server=env_bool(self._get_env("INSTALL_CODE_SERVER", "true"), True),
+            install_code_server=env_bool(
+                self._get_env("INSTALL_CODE_SERVER", "true"), True
+            ),
             install_cursor=env_bool(self._get_env("INSTALL_CURSOR", "true"), True),
             node_version=self._get_env("NODE_VERSION", "20"),
             firewall_strict=env_bool(self._get_env("FIREWALL_STRICT", "true"), True),
@@ -746,7 +777,10 @@ class SDKDeployer:
             access_level="ANY",
         )
         for c in compartments:
-            if c.name == self.runtime.compartment_name and c.lifecycle_state == "ACTIVE":
+            if (
+                c.name == self.runtime.compartment_name
+                and c.lifecycle_state == "ACTIVE"
+            ):
                 self.compartment_ocid = c.id
                 break
         if not self.compartment_ocid:
@@ -759,7 +793,11 @@ class SDKDeployer:
             compartment_id=self.compartment_ocid,
             display_name=self.runtime.vm_name,
         )
-        non_terminated = [i for i in instances if i.lifecycle_state not in {"TERMINATED", "TERMINATING"}]
+        non_terminated = [
+            i
+            for i in instances
+            if i.lifecycle_state not in {"TERMINATED", "TERMINATING"}
+        ]
         if not non_terminated:
             return
 
@@ -797,7 +835,9 @@ class SDKDeployer:
         )
         idx = max(0, self.runtime.availability_domain_num - 1)
         if idx >= len(ads):
-            fail(f"Availability domain index {self.runtime.availability_domain_num} is out of range.")
+            fail(
+                f"Availability domain index {self.runtime.availability_domain_num} is out of range."
+            )
         self.availability_domain_name = ads[idx].name
         log(f"Using availability domain: {self.availability_domain_name}")
 
@@ -812,11 +852,15 @@ class SDKDeployer:
             sort_order="DESC",
         )
         filtered = [
-            img for img in images
-            if "aarch64" not in img.display_name.lower() and "minimal" not in img.display_name.lower()
+            img
+            for img in images
+            if "aarch64" not in img.display_name.lower()
+            and "minimal" not in img.display_name.lower()
         ]
         if not filtered:
-            fail(f"No Ubuntu {self.runtime.ubuntu_version} image found for shape {self.runtime.vm_shape}")
+            fail(
+                f"No Ubuntu {self.runtime.ubuntu_version} image found for shape {self.runtime.vm_shape}"
+            )
         self.image_ocid = filtered[0].id
         log(f"Using image OCID: {self.image_ocid}")
 
@@ -826,7 +870,9 @@ class SDKDeployer:
             fail(f"Existing VCN not AVAILABLE: {vcn_id} ({vcn.lifecycle_state})")
         subnet = self.network.get_subnet(subnet_id).data
         if subnet.lifecycle_state != "AVAILABLE":
-            fail(f"Existing Subnet not AVAILABLE: {subnet_id} ({subnet.lifecycle_state})")
+            fail(
+                f"Existing Subnet not AVAILABLE: {subnet_id} ({subnet.lifecycle_state})"
+            )
         if subnet.vcn_id != vcn_id:
             fail(f"Subnet {subnet_id} does not belong to VCN {vcn_id}")
 
@@ -840,7 +886,9 @@ class SDKDeployer:
             return
 
         if r.existing_vcn_ocid or r.existing_subnet_ocid:
-            warn("Only one of EXISTING_VCN_OCID / EXISTING_SUBNET_OCID set; falling back to managed network.")
+            warn(
+                "Only one of EXISTING_VCN_OCID / EXISTING_SUBNET_OCID set; falling back to managed network."
+            )
 
         vcns = all_results(
             self.network.list_vcns,
@@ -853,7 +901,9 @@ class SDKDeployer:
             log(f"Using existing VCN by name: {self.vcn_ocid}")
         else:
             if self.args.dry_run:
-                info(f"[dry-run] Would create VCN '{r.vcn_name}' with CIDR {r.vcn_cidr}")
+                info(
+                    f"[dry-run] Would create VCN '{r.vcn_name}' with CIDR {r.vcn_cidr}"
+                )
                 self.vcn_ocid = "<to-create>"
                 self.subnet_ocid = "<to-create>"
                 return
@@ -1050,7 +1100,9 @@ class SDKDeployer:
         # 4. Build DEVELOPERS_PORTS_MAP
         dev_ports_map = ""
         for dev in r.developers:
-            dev_ports_map += f'      DEV_PORTS["{dev["name"]}"]={dev["code_server_port"]}\n'
+            dev_ports_map += (
+                f'      DEV_PORTS["{dev["name"]}"]={dev["code_server_port"]}\n'
+            )
 
         # 5. Build DASHBOARD_HTML
         cards_html = ""
@@ -1119,7 +1171,9 @@ class SDKDeployer:
         log(f"Generated cloud-init file: {output_path}")
 
     def create_instance(self) -> None:
-        cloud_init = (self.project_dir / "configs" / "cloud-init.yaml").read_text(encoding="utf-8")
+        cloud_init = (self.project_dir / "configs" / "cloud-init.yaml").read_text(
+            encoding="utf-8"
+        )
         cloud_b64 = base64.b64encode(cloud_init.encode("utf-8")).decode("ascii")
         ssh_pub = self.runtime.ssh_public_key_path.read_text(encoding="utf-8").strip()
         r = self.runtime
@@ -1196,14 +1250,16 @@ class SDKDeployer:
             path.write_text(cfg, encoding="utf-8")
             path.chmod(0o600)
             log(f"Generated WireGuard client config for {dev['name']}: {path}")
-            
-            if dev['name'] == self.runtime.admin_username:
+
+            if dev["name"] == self.runtime.admin_username:
                 shutil.copy(path, keys_dir / "client.conf")
                 (keys_dir / "client.conf").chmod(0o600)
-                
+
             if shutil.which("qrencode"):
                 qr_path = keys_dir / f"client_{dev['name']}-qr.txt"
-                qr = run_cmd(["bash", "-lc", f"qrencode -t ansiutf8 < '{path}'"], check=False)
+                qr = run_cmd(
+                    ["bash", "-lc", f"qrencode -t ansiutf8 < '{path}'"], check=False
+                )
                 if qr:
                     qr_path.write_text(qr, encoding="utf-8")
 
@@ -1226,7 +1282,7 @@ class SDKDeployer:
             f"Dev Dashboard: http://{r.wg_server_ip} (Connect via VPN first)\n\n"
             "# Developer Workspaces\n"
         )
-        
+
         for dev in r.developers:
             txt += (
                 f"## Developer: {dev['name']}\n"
@@ -1235,7 +1291,7 @@ class SDKDeployer:
                 f"  VPN IP: {dev['wg_ip']}\n"
                 f"  code-server (Web IDE): http://{r.wg_server_ip}:{dev['code_server_port']}\n\n"
             )
-            
+
         txt += (
             "# Compartment\n"
             f"Compartment: {r.compartment_name}\n"
@@ -1297,35 +1353,67 @@ class SDKDeployer:
     def print_summary(self) -> None:
         r = self.runtime
         print("")
-        print(f"{GREEN}╔══════════════════════════════════════════════════════════════════╗{NC}")
-        print(f"{GREEN}║           DEPLOYMENT COMPLETE!                                   ║{NC}")
-        print(f"{GREEN}╠══════════════════════════════════════════════════════════════════╣{NC}")
+        print(
+            f"{GREEN}╔══════════════════════════════════════════════════════════════════╗{NC}"
+        )
+        print(
+            f"{GREEN}║           DEPLOYMENT COMPLETE!                                   ║{NC}"
+        )
+        print(
+            f"{GREEN}╠══════════════════════════════════════════════════════════════════╣{NC}"
+        )
         print(f"{GREEN}║{NC} Instance: {CYAN}{r.vm_name}{NC}")
         print(f"{GREEN}║{NC} Public IP: {CYAN}{self.public_ip}{NC}")
-        print(f"{GREEN}║{NC} Shape: {CYAN}{r.vm_shape} ({int(r.vm_ocpus)} OCPUs, {int(r.vm_memory_gb)}GB RAM){NC}")
-        print(f"{GREEN}╠══════════════════════════════════════════════════════════════════╣{NC}")
-        print(f"{GREEN}║{NC} Dev Dashboard: {CYAN}http://{r.wg_server_ip}{NC} (Connect via VPN)")
-        print(f"{GREEN}║{NC} Owner SSH: {CYAN}ssh -i {r.ssh_private_key_path} {r.admin_username}@{self.public_ip}{NC}")
-        print(f"{GREEN}╚══════════════════════════════════════════════════════════════════╝{NC}")
+        print(
+            f"{GREEN}║{NC} Shape: {CYAN}{r.vm_shape} ({int(r.vm_ocpus)} OCPUs, {int(r.vm_memory_gb)}GB RAM){NC}"
+        )
+        print(
+            f"{GREEN}╠══════════════════════════════════════════════════════════════════╣{NC}"
+        )
+        print(
+            f"{GREEN}║{NC} Dev Dashboard: {CYAN}http://{r.wg_server_ip}{NC} (Connect via VPN)"
+        )
+        print(
+            f"{GREEN}║{NC} Owner SSH: {CYAN}ssh -i {r.ssh_private_key_path} {r.admin_username}@{self.public_ip}{NC}"
+        )
+        print(
+            f"{GREEN}╚══════════════════════════════════════════════════════════════════╝{NC}"
+        )
         print("")
 
     def print_plan(self) -> None:
         r = self.runtime
         print("")
-        print(f"{BLUE}╔══════════════════════════════════════════════════════════════════╗{NC}")
-        print(f"{BLUE}║                 SDK DEPLOYMENT PLAN                              ║{NC}")
-        print(f"{BLUE}╠══════════════════════════════════════════════════════════════════╣{NC}")
+        print(
+            f"{BLUE}╔══════════════════════════════════════════════════════════════════╗{NC}"
+        )
+        print(
+            f"{BLUE}║                 SDK DEPLOYMENT PLAN                              ║{NC}"
+        )
+        print(
+            f"{BLUE}╠══════════════════════════════════════════════════════════════════╣{NC}"
+        )
         print(f"{BLUE}║{NC} Profile:      {CYAN}{r.profile}{NC}")
         print(f"{BLUE}║{NC} Region:       {CYAN}{r.region}{NC}")
         print(f"{BLUE}║{NC} Compartment:  {CYAN}{r.compartment_name}{NC}")
         print(f"{BLUE}║{NC} VM Name:      {CYAN}{r.vm_name}{NC}")
-        print(f"{BLUE}║{NC} Shape:        {CYAN}{r.vm_shape} ({int(r.vm_ocpus)} OCPUs, {int(r.vm_memory_gb)}GB){NC}")
+        print(
+            f"{BLUE}║{NC} Shape:        {CYAN}{r.vm_shape} ({int(r.vm_ocpus)} OCPUs, {int(r.vm_memory_gb)}GB){NC}"
+        )
         print(f"{BLUE}║{NC} AD:           {CYAN}{self.availability_domain_name}{NC}")
         print(f"{BLUE}║{NC} Image:        {CYAN}{self.image_ocid[:48]}...{NC}")
-        print(f"{BLUE}║{NC} Existing VM:  {CYAN}{self.existing_instance_state or 'none'}{NC}")
-        print(f"{BLUE}║{NC} VCN:          {CYAN}{self.vcn_ocid or '(resolved during apply)'}{NC}")
-        print(f"{BLUE}║{NC} Subnet:       {CYAN}{self.subnet_ocid or '(resolved during apply)'}{NC}")
-        print(f"{BLUE}╚══════════════════════════════════════════════════════════════════╝{NC}")
+        print(
+            f"{BLUE}║{NC} Existing VM:  {CYAN}{self.existing_instance_state or 'none'}{NC}"
+        )
+        print(
+            f"{BLUE}║{NC} VCN:          {CYAN}{self.vcn_ocid or '(resolved during apply)'}{NC}"
+        )
+        print(
+            f"{BLUE}║{NC} Subnet:       {CYAN}{self.subnet_ocid or '(resolved during apply)'}{NC}"
+        )
+        print(
+            f"{BLUE}╚══════════════════════════════════════════════════════════════════╝{NC}"
+        )
         print("")
 
     def execute(self) -> None:
@@ -1363,10 +1451,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config-file", default="~/.oci/config", help="Path to OCI config")
     p.add_argument("--profile", default="", help="OCI profile override")
     p.add_argument("--region", default="", help="OCI region override")
-    p.add_argument("--yes", action="store_true", help="Run non-interactive without confirmation prompt")
-    p.add_argument("--replace-existing", action="store_true", help="Terminate existing instance with same name")
-    p.add_argument("--dry-run", action="store_true", help="Resolve and print plan without creating/updating resources")
-    p.add_argument("--skip-ssh-verify", action="store_true", help="Skip post-deploy SSH connectivity verification")
+    p.add_argument(
+        "--yes",
+        action="store_true",
+        help="Run non-interactive without confirmation prompt",
+    )
+    p.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help="Terminate existing instance with same name",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Resolve and print plan without creating/updating resources",
+    )
+    p.add_argument(
+        "--skip-ssh-verify",
+        action="store_true",
+        help="Skip post-deploy SSH connectivity verification",
+    )
     return p
 
 

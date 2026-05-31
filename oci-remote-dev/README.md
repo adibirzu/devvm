@@ -471,14 +471,49 @@ All of `configs/` (WireGuard keys, deployment info, rendered vars) and `.env.loc
 
 ---
 
-## 🧪 Testing
+## 🧪 Development, CI & Verification
+
+**Local CI parity** (matches `.github/workflows/ci.yml` — lint, gate, ansible-check, tests):
 
 ```bash
 pip install -r requirements-test.txt
-pytest tests/ -v
+make check          # black + ruff + security gate + ansible syntax + pytest
+# or individually:
+make test           # pytest (159 tests: deployers, WireGuard renderer, agent-OS,
+                    #          guardrails, control-plane, tenant scoping, jobs, …)
+make lint           # black --check + ruff
+make gate           # security_gate.py — blocks OCIDs / IPs / secrets in the tree
 ```
 
-Covers cloud-init rendering, security-gate logic, and the WireGuard split-tunnel/no-DNS routing fix.
+CI runs three jobs on every push/PR: **Python lint** (black + ruff), **shell lint**
+(shellcheck `--severity=error`), and **tests** (pytest + security gate + ansible
+`--syntax-check`).
+
+**Deployer prerequisites** (controller-side): `pip install -r requirements.txt` plus
+the provider CLI + Ansible (`ansible`, and `oci`/`aws`/`gcloud`/`az` for your target).
+
+**Post-deploy verification** (on the VM — `deploy.sh` runs it automatically and prints a
+summary; re-run anytime):
+
+```bash
+verify-agent-os     # checks every systemd unit + VPN endpoint, then LIVE-exercises the
+                    # guardrail hook (rm -rf / must be denied) and the notification feed
+```
+
+### Runtime developer management (control plane)
+
+Add/remove developers without redeploying-from-scratch via the VPN-only control-plane
+API (admin token at `/etc/agent-os/admin.token`):
+
+```bash
+curl -H "X-Admin-Token: $TOKEN" -d '{"name":"carlos","ssh_key":"ssh-ed25519 AAAA…"}' \
+     http://10.200.200.1:8082/developers      # → 202 queued
+curl http://10.200.200.1:8082/pending          # review the queue
+```
+
+Account changes are **queued** (`/etc/agent-os/pending-changes.jsonl`), never auto-run —
+add the reviewed entries as `DEV_N_*` in `.env` and `make deploy` to materialize them.
+Budgets (`POST /budgets`) apply live.
 
 ---
 

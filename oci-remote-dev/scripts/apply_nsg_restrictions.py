@@ -54,8 +54,19 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--vcn-id", required=True)
     p.add_argument("--security-list-id", required=True)
     p.add_argument("--nsg-name", default="remote-dev-restricted-nsg")
-    p.add_argument("--source", action="append", required=True, help="CIDR source; repeat flag for multiple")
-    p.add_argument("--port", action="append", type=int, required=True, help="TCP port; repeat flag for multiple")
+    p.add_argument(
+        "--source",
+        action="append",
+        required=True,
+        help="CIDR source; repeat flag for multiple",
+    )
+    p.add_argument(
+        "--port",
+        action="append",
+        type=int,
+        required=True,
+        help="TCP port; repeat flag for multiple",
+    )
     return p.parse_args()
 
 
@@ -120,7 +131,9 @@ def main() -> int:
                     is_stateless=False,
                     description=f"allow {src} tcp/{port}",
                     tcp_options=oci.core.models.TcpOptions(
-                        destination_port_range=oci.core.models.PortRange(min=port, max=port)
+                        destination_port_range=oci.core.models.PortRange(
+                            min=port, max=port
+                        )
                     ),
                 )
             )
@@ -141,11 +154,15 @@ def main() -> int:
         retry(
             "update_vnic_nsgs",
             lambda: network.update_vnic(
-                vnic_id=vnic_id, update_vnic_details=oci.core.models.UpdateVnicDetails(nsg_ids=nsg_ids)
+                vnic_id=vnic_id,
+                update_vnic_details=oci.core.models.UpdateVnicDetails(nsg_ids=nsg_ids),
             ),
         )
 
-    sl = retry("get_security_list", lambda: network.get_security_list(args.security_list_id).data)
+    sl = retry(
+        "get_security_list",
+        lambda: network.get_security_list(args.security_list_id).data,
+    )
     new_ingress = []
     for rule in sl.ingress_security_rules or []:
         keep = False
@@ -172,7 +189,9 @@ def main() -> int:
                     is_stateless=False,
                     description=f"sl allow {src} tcp/{port}",
                     tcp_options=oci.core.models.TcpOptions(
-                        destination_port_range=oci.core.models.PortRange(min=port, max=port)
+                        destination_port_range=oci.core.models.PortRange(
+                            min=port, max=port
+                        )
                     ),
                 )
             )
@@ -193,9 +212,14 @@ def main() -> int:
 
     final_nsg_rules = retry(
         "final_nsg_rules",
-        lambda: network.list_network_security_group_security_rules(network_security_group_id=nsg_id).data,
+        lambda: network.list_network_security_group_security_rules(
+            network_security_group_id=nsg_id
+        ).data,
     )
-    final_sl = retry("final_security_list", lambda: network.get_security_list(args.security_list_id).data)
+    final_sl = retry(
+        "final_security_list",
+        lambda: network.get_security_list(args.security_list_id).data,
+    )
     summary = {
         "nsg_id": nsg_id,
         "vnic_id": vnic_id,
@@ -210,7 +234,10 @@ def main() -> int:
                     "protocol": r.protocol,
                 }
                 for r in final_nsg_rules
-                if r.direction == "INGRESS" and str(r.protocol) == "6" and r.tcp_options and r.tcp_options.destination_port_range
+                if r.direction == "INGRESS"
+                and str(r.protocol) == "6"
+                and r.tcp_options
+                and r.tcp_options.destination_port_range
             ],
             key=lambda x: (x["source"], x["port"]),
         ),
