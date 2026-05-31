@@ -18,6 +18,7 @@
     install_multillm_gateway: true
     multillm_gateway_port: 8080
     install_resilience_layer: true
+    install_agent_os: true
     multillm_source_path: "../multillm"
     # developers list will be passed as extra_vars
     developers: []
@@ -315,6 +316,10 @@
     - name: Configure disconnect-resilience layer (durable agent sessions, mosh, memory palace)
       ansible.builtin.include_tasks: resilience_tasks.yml
       when: install_resilience_layer | default(true)
+
+    - name: Configure Agent-OS (tool guardrails, MCP registry, OCI read-only MCP)
+      ansible.builtin.include_tasks: agent_os_tasks.yml
+      when: install_agent_os | default(true)
 
     - name: Configure user environments
       ansible.builtin.include_tasks: user_tasks.yml
