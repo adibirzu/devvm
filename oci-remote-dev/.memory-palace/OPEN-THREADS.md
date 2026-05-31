@@ -3,6 +3,10 @@
 What's in flight. **Read this first on reconnect.** Move finished items to `SESSION-LOG.md`.
 
 ## Recently shipped
+- [x] Pre-use verification (repo stays PRIVATE): gitleaks config added (the 1 finding
+      was a synthetic private-key test fixture); docs/links/install scripts verified.
+- [x] Fixed deploy-blocking bug: multillm source `../multillm` didn't resolve → deploy
+      now clones the PUBLIC multillm repo to /opt/multillm (local checkout optional).
 - [x] OOTB hardening: LICENSE, requirements{,-test}.txt, Makefile, CI test job + green
       lint/gate, verify-agent-os post-deploy smoke (live guardrail+notify check).
 - [x] Phase 5 (done): scheduled autonomous agent jobs (`agent-job` + per-user 5-min
