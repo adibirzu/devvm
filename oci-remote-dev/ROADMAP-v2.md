@@ -116,15 +116,19 @@ Goal: let agents (and humans) share durable, scoped context across sessions and 
   convention: `user-<whoami>` by default, `--shared` for the team namespace, `--all`
   to search across. Pure-stdlib, covered by `tests/test_context_bus.py`.
 
-**Remaining:**
-- **Hard scope enforcement (multillm-side)** — the memory HTTP API + tool layer must
-  accept and filter on `tenant_id` (the column exists; the API still scopes only by the
-  free-text `project`). Until then, `user-<name>` is a naming convention, not a
-  boundary: writes are authenticated by the gateway API key, not by UNIX identity, and
-  any client can name any project. Closing this is the real Phase 2 deliverable.
-- **Pairing integration** — `pair-claude` sessions write a transcript summary into the
-  `shared` namespace so a developer joining later has continuity.
-- **Toggle:** `ENABLE_CONTEXT_BUS=true` (currently always-on with the gateway).
+- ✅ **Pairing integration** — `pair-claude note "<text>"` and `pair-claude summary`
+  push pairing context to the `shared` namespace; `pair-claude kill` auto-saves a
+  transcript summary first, so whoever joins later runs `context search pairing --shared`
+  for continuity.
+- ✅ **Toggle** — the bus rides with the gateway (`install_multillm_gateway`); a separate
+  `ENABLE_CONTEXT_BUS` flag would be cosmetic since the store *is* the gateway.
+
+**Remaining (multillm-side, cross-repo):**
+- **Hard scope enforcement** — the memory HTTP API + tool layer must accept and filter on
+  `tenant_id` (the column exists; the API still scopes only by free-text `project`). Until
+  then, `user-<name>` is a convention, not a boundary: writes authenticate by the gateway
+  API key, not UNIX identity. This is the one remaining Phase 2 item and it lives in the
+  `multillm` repo, not here.
 
 **Risk to manage:** scope leakage. Once enforcement lands, writes must be authenticated
 to the calling UNIX user and `shared`-scope writes gated on `developers` membership.

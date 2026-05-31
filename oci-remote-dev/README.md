@@ -384,8 +384,12 @@ A shared-session helper at `/usr/local/bin/pair-claude` backed by a group-owned 
 pair-claude start    # developer 1 starts a shared Claude Code session
 pair-claude join     # others attach to the live session
 pair-claude status   # is a session active?
-pair-claude kill     # tear down and clean up the socket
+pair-claude note "decided to refactor auth"   # save a note to the shared context bus
+pair-claude summary  # capture the transcript to the shared context bus
+pair-claude kill     # auto-saves a summary, then tears down the socket
 ```
+
+A developer joining later regains continuity with `context search pairing --shared`.
 
 ### RDP desktops
 XFCE4 over XRDP (port `3389`), one simultaneous session per user. Ansible installs a Polkit colord rule (`/etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla`) so logins never get stuck on an authentication popup.
