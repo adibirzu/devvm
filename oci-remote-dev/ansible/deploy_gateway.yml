@@ -5,8 +5,15 @@
 # tasks. Idempotent; safe to re-run. Mirrors deploy_pai.yml.
 #
 #   ansible-playbook -i '<VM_IP>,' -u devuser --private-key ~/.ssh/<key> \
-#     -e "install_multillm_gateway=true" -e '{"developers":[{"name":"royce"},{"name":"adi"}]}' \
+#     -e "install_multillm_gateway=true" \
+#     -e "multillm_source_path=/abs/path/to/multillm" \
+#     -e '{"developers":[{"name":"royce"},{"name":"adi"}]}' \
 #     ansible/deploy_gateway.yml
+#
+# multillm_source_path: ABSOLUTE path to the local multillm repo (the gateway
+# package source). Required — there is no portable default since the multillm repo
+# lives outside this repo. ansible.builtin.copy resolves relative paths against the
+# playbook dir, so always pass an absolute path.
 #
 # The gateway is what runtime gateway-routing (OPENAI_BASE_URL / ANTIGRAVITY_BASE_URL)
 # points at — without it, agy/hermes/pi/claude/codex still run on their own provider
@@ -18,12 +25,19 @@
   become: true
   vars:
     install_multillm_gateway: true
-    multillm_source_path: "../multillm"
     multillm_gateway_port: 8080
     wg_server_ip: "10.200.200.1"
     wg_network: "10.200.200.0/24"
     developers: []
   tasks:
+    - name: Gateway | Require an absolute multillm_source_path
+      ansible.builtin.assert:
+        that:
+          - multillm_source_path is defined
+          - multillm_source_path | length > 0
+        fail_msg: "Pass -e multillm_source_path=/abs/path/to/multillm (the local multillm repo)."
+      when: install_multillm_gateway | bool
+
     - name: Gateway | Copy the multillm source to /opt (gateway installs from it)
       ansible.builtin.copy:
         src: "{{ multillm_source_path }}"
