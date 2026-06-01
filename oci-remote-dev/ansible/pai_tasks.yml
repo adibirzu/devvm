@@ -71,16 +71,15 @@
   failed_when: false
   when: install_hermes | default(false) | bool
 
-# CRITICAL: close stdin (`</dev/null`). The Hermes installer's `setup` stage is
-# `needs_user_input:true` and launches an interactive API-key wizard (`hermes setup`)
-# whenever a terminal is present — under Ansible that wizard blocks FOREVER. With
-# stdin closed the installer hits its own "no terminal available → skip setup
-# wizard" path and exits cleanly; the per-user runs `hermes setup` later, by hand.
-# --skip-browser avoids the Chromium pull on a headless server.
-- name: PAI | Install Hermes per-developer (no tty → skips interactive setup wizard)
+# CRITICAL: pass `--skip-setup`. The Hermes installer's API-key wizard reads from
+# /dev/tty DIRECTLY (not stdin), so `</dev/null` does NOT stop it — under Ansible's
+# pseudo-tty /dev/tty is openable and the wizard blocks FOREVER. The installer's own
+# `--skip-setup` flag is the correct, supported way to skip it (run `hermes setup`
+# by hand per-user afterward). `--skip-browser` avoids the Chromium pull (headless).
+- name: PAI | Install Hermes per-developer (--skip-setup avoids the /dev/tty wizard hang)
   become: true
   become_user: "{{ item.name }}"
-  ansible.builtin.shell: "/bin/bash /opt/agent-os/hermes-install.sh --skip-browser </dev/null"
+  ansible.builtin.shell: "/bin/bash /opt/agent-os/hermes-install.sh --skip-browser --skip-setup </dev/null"
   args:
     creates: "/home/{{ item.name }}/.local/bin/hermes"
   environment:
