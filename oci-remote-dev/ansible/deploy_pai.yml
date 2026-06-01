@@ -19,6 +19,7 @@
     install_pai: true
     install_antigravity: false
     install_hermes: false
+    install_pi: false
     pai_encrypt_memory: true
     developers: []
   tasks:

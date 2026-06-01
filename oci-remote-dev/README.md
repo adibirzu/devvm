@@ -448,7 +448,8 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | Control-plane mutations — admin-token auth, queued account changes, live budgets | ✅ Implemented |
 | Scheduled autonomous agent jobs (`agent-job`, per-user timer) | ✅ Implemented |
 | **PAI / Obi per-user deploy** (`install_pai`, `pai-bootstrap`, 0700, never shared) | ✅ Implemented |
-| **Pluggable agent-runtime registry** (Claude/Codex/Gemini + Antigravity/Hermes/nano-claw) | ✅ Implemented |
+| **Pluggable agent-runtime registry** (Claude/Codex + Antigravity/Hermes/nano-claw/**Pi**) | ✅ Implemented |
+| **Pi coding agent** (earendil-works) registered + installable (runs inside the fleet sandbox) | ✅ Implemented |
 | **Multi-device encrypted MEMORY sync** (`pai-sync`, age, offline-first) | ✅ Implemented |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
