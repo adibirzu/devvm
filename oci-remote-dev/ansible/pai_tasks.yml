@@ -36,18 +36,24 @@
   failed_when: false
   when: install_antigravity | default(true) | bool
 
-- name: PAI | Run the fetched Antigravity installer (only if agy not present)
-  ansible.builtin.command:
-    cmd: /bin/bash /opt/agent-os/agy-install.sh
-    creates: /usr/local/bin/agy
-  environment:
-    ANTIGRAVITY_INSTALL_DIR: /usr/local/bin
+# AGY installs to $HOME/.local/bin (TARGET_DIR in the installer). Run it PER-USER
+# (not root, which would land in /root/.local/bin and never reach a developer PATH),
+# with stdin closed so the installer's "no terminal → skip interactive prompts" path
+# triggers. `creates` points at the real per-user binary path.
+- name: PAI | Run the Antigravity installer per-developer (no tty, $HOME/.local/bin)
+  become: true
+  become_user: "{{ item.name }}"
+  ansible.builtin.shell: "/bin/bash /opt/agent-os/agy-install.sh </dev/null"
+  args:
+    creates: "/home/{{ item.name }}/.local/bin/agy"
+  loop: "{{ developers }}"
   register: agy_install
   changed_when: "'installed' in (agy_install.stdout | default('') | lower)"
   failed_when: false
   when:
     - install_antigravity | default(true) | bool
     - agy_fetch is succeeded
+    - developers | length > 0
 
 # Hermes (Nous Research) — local agent runtime, registered so the SAME Telegram/
 # WhatsApp bots can drive it on the VM. Headless one-shot is `hermes -z "<prompt>"`.
@@ -65,11 +71,17 @@
   failed_when: false
   when: install_hermes | default(false) | bool
 
-- name: PAI | Install Hermes per-developer (headless, --skip-browser, never root)
+# CRITICAL: close stdin (`</dev/null`). The Hermes installer's `setup` stage is
+# `needs_user_input:true` and launches an interactive API-key wizard (`hermes setup`)
+# whenever a terminal is present — under Ansible that wizard blocks FOREVER. With
+# stdin closed the installer hits its own "no terminal available → skip setup
+# wizard" path and exits cleanly; the per-user runs `hermes setup` later, by hand.
+# --skip-browser avoids the Chromium pull on a headless server.
+- name: PAI | Install Hermes per-developer (no tty → skips interactive setup wizard)
   become: true
   become_user: "{{ item.name }}"
-  ansible.builtin.command:
-    cmd: /bin/bash /opt/agent-os/hermes-install.sh --skip-browser
+  ansible.builtin.shell: "/bin/bash /opt/agent-os/hermes-install.sh --skip-browser </dev/null"
+  args:
     creates: "/home/{{ item.name }}/.local/bin/hermes"
   environment:
     HERMES_HOME: "/home/{{ item.name }}/.hermes"
