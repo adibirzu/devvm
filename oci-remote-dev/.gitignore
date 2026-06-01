@@ -42,3 +42,29 @@ __pycache__/
 .ruff_cache/
 .coverage
 *.egg-info/
+
+# --- Sensitive data: NEVER publish ---
+# Session summaries / agent handoffs — contain live VM facts (public IPs, OCIDs, key paths)
+.summary/
+*HANDOFF*
+*handoff*
+*CONNECTION-DETAILS*
+*connection-details*
+# Credentials / secrets files
+*-credentials
+*.credentials
+credentials.json
+credentials.yaml
+*.secret
+*.secrets
+# Cloud topology / inventory with real identities
+deployment-info*
+hosts.ini
+ansible_vars.json
+oci-config
+.oci/
+# VPN client configs (embed private keys)
+client_*.conf
+wg-*.conf
+wg0.conf
+*.ovpn
