@@ -1,0 +1,45 @@
+---
+# deploy_gateway.yml — thin wrapper that deploys ONLY the MultiLLM gateway
+# (source copy + hardened systemd service + per-user collectors) against an
+# existing VM, without re-running the full playbook's desktop/code-server/user
+# tasks. Idempotent; safe to re-run. Mirrors deploy_pai.yml.
+#
+#   ansible-playbook -i '<VM_IP>,' -u devuser --private-key ~/.ssh/<key> \
+#     -e "install_multillm_gateway=true" -e '{"developers":[{"name":"royce"},{"name":"adi"}]}' \
+#     ansible/deploy_gateway.yml
+#
+# The gateway is what runtime gateway-routing (OPENAI_BASE_URL / ANTIGRAVITY_BASE_URL)
+# points at — without it, agy/hermes/pi/claude/codex still run on their own provider
+# auth, but usage tracking + the unified proxy are absent. Binds the WireGuard IP,
+# firewalled to the WG subnet only.
+
+- name: Deploy MultiLLM gateway
+  hosts: all
+  become: true
+  vars:
+    install_multillm_gateway: true
+    multillm_source_path: "../multillm"
+    multillm_gateway_port: 8080
+    wg_server_ip: "10.200.200.1"
+    wg_network: "10.200.200.0/24"
+    developers: []
+  tasks:
+    - name: Gateway | Copy the multillm source to /opt (gateway installs from it)
+      ansible.builtin.copy:
+        src: "{{ multillm_source_path }}"
+        dest: /opt/
+        owner: root
+        group: developers
+        mode: '0775'
+      when: install_multillm_gateway | bool
+
+    - name: Gateway | Run the MultiLLM gateway + collector tasks
+      ansible.builtin.include_tasks: multillm_tasks.yml
+
+    - name: Gateway | Restrict the gateway port to the WireGuard subnet
+      ansible.builtin.ufw:
+        rule: allow
+        from_ip: "{{ wg_network }}"
+        port: "{{ multillm_gateway_port | string }}"
+        proto: tcp
+      when: install_multillm_gateway | bool
