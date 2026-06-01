@@ -65,6 +65,20 @@
       "gateway_env": "NANOCLAW_BASE_URL",
       "guardrail_scope": "default",
       "agentctl_compatible": true
+    },
+    {
+      "name": "pi",
+      "aliases": ["earendil-pi"],
+      "enabled": true,
+      "description": "Pi coding agent (earendil-works) — self-extensible TS agent with read/write/edit/bash tools, JSONL session tree, multi-provider via pi-ai. Binary 'pi'. Headless: pi -p \"<prompt>\" (print mode; also reads piped stdin). JSON: pi --mode json. Provider/model: --provider/--model. Install: npm i -g @earendil-works/pi-coding-agent (needs Node >=22.19). Gateway routing via OPENAI_BASE_URL (pi-ai honors OpenAI-compatible base URLs). Docs: github.com/earendil-works/pi. NOTE: pi ships NO sandboxing — run inside the devvm guardrail/per-tenant sandbox (its missing safety is exactly what this fleet provides).",
+      "kind": "cli",
+      "docs": "https://github.com/earendil-works/pi",
+      "interactive_template": ["pi"],
+      "exec_template": ["pi", "-p", "{prompt}"],
+      "gateway_routed": true,
+      "gateway_env": "OPENAI_BASE_URL",
+      "guardrail_scope": "default",
+      "agentctl_compatible": true
     }
   ]
 }

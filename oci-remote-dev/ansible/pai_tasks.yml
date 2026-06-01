@@ -114,6 +114,35 @@
     - install_hermes | default(false) | bool
     - developers | length > 0
 
+# Pi coding agent (earendil-works) — self-extensible TS agent; registered runtime.
+# Needs Node >=22.19; the base playbook installs Node 20, so ensure Node 22 first.
+# Pi ships NO sandboxing by design — it runs INSIDE this fleet's guardrail +
+# per-tenant isolation, which is exactly the sandbox Pi tells users to provide.
+- name: PAI | Ensure Node 22 (Pi requires >=22.19; NodeSource repo)
+  ansible.builtin.shell: |
+    set -e
+    cur="$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1 || echo 0)"
+    if [ "${cur:-0}" -ge 22 ]; then echo "node ${cur} ok"; exit 0; fi
+    curl -fsSL https://deb.nodesource.com/setup_22.x -o /tmp/nodesource_22.sh
+    bash /tmp/nodesource_22.sh
+    apt-get install -y nodejs
+    echo "node upgraded to $(node --version)"
+  register: pi_node
+  changed_when: "'upgraded' in pi_node.stdout"
+  failed_when: false
+  when: install_pi | default(false) | bool
+
+- name: PAI | Install Pi coding agent globally (npm)
+  ansible.builtin.npm:
+    name: "@earendil-works/pi-coding-agent"
+    global: true
+    state: present
+  register: pi_install
+  failed_when: false
+  when:
+    - install_pi | default(false) | bool
+    - pi_node is succeeded
+
 - name: PAI | Library directory for shared agent-runtime data
   ansible.builtin.file:
     path: /opt/agent-os
