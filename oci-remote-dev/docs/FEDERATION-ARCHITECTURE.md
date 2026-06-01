@@ -46,7 +46,18 @@ state between all of them.
    per-action) and are executed by the *local* node that owns that device, never by a
    remote agent reaching across the bus.
 
-## The four decisions to make first
+## Decisions made (2026-06-01)
+
+| # | Decision | Choice |
+|---|----------|--------|
+| **DECIDE-4** | Where the central PAI lives | **Cloud DevVM** is the federation hub (reuses WG mesh + gateway + guardrails; homes join as WG peers, nothing new public) |
+| **DECIDE-2** | Local node weight | **Hybrid** — full local PAI at the **House** (offline-capable, own MEMORY+agents); **thin agents** at Office + Apartment; DevVM coding-only |
+| **DECIDE-3** | Sync mechanism | **Extend `pai-sync` + notify-pull** — hub holds canonical age-encrypted MEMORY; nodes pull on a Pulse notification (~seconds); per-location namespaces; git history/rollback |
+| **DECIDE-1** | Topology | **Hub-and-spoke** (implied by DECIDE-4) — central DevVM hub, nodes sync to/from it; nodes stay locally autonomous if hub/network is down |
+
+The rest of this doc reflects these choices.
+
+## The decision detail (for reference)
 
 **[DECIDE-1] Topology: hub-and-spoke vs mesh.**
 - *Hub* (recommended): central PAI is the router; nodes sync to/from it. Simpler, one
