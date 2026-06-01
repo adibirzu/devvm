@@ -249,3 +249,11 @@ unit-tested to the repo's existing standards.
 - D2 bridge: `ssh-vm` inputAdapter added to LIVE `~/.claude/PAI/TOOLS/RemoteCodeInputRouter.ts` (backup `.pre-sshvm.bak`); base64-safe transport; 3 unit tests green incl. injection-proof. devvm-side: `scripts/register_vm_session.ts` + `docs/REMOTE-CONTROL-BRIDGE.md`.
 - Federation: `docs/FEDERATION-ARCHITECTURE.md` — House/Office/Apartment/CloudVM, decisions locked (DevVM hub · hybrid nodes · pai-sync+notify-pull · hub-and-spoke). The `ssh-vm` adapter is the F0 home-node control primitive.
 - Operational note: the VM exhibited intermittent SSH reachability (port-22 flapping) during rollout — memory was healthy (30Gi free), so network/OCI-side, not OOM. Re-verify in a stable window if installs appear incomplete.
+
+### Pi coding agent (earendil-works) — integrated + LIVE
+- Registered in `agent-os/runtimes.json` (`pi -p {prompt}`, OPENAI_BASE_URL, alias earendil-pi); `pai-runtimes resolve pi` verified on VM.
+- Local PAI dev: `pi 0.78.0` installed (bun, Node 22.22) at `~/.bun/bin/pi`; runs, needs `/login` for provider auth (one-time, like hermes setup).
+- DevVM: deploy `ok=10 changed=3 failed=0` — **Node upgraded 20→22.22.2** (principal-authorized; NodeSource), **pi 0.78.0** at `/usr/bin/pi`. Node upgrade verified SAFE: claude 2.1.158 + codex 0.135.0 intact, code-server active (bundles own node). `docs/PI-INTEGRATION.md`, `.env.example` INSTALL_PI, README updated. 191 tests green, gate clean.
+- Architecture framing: Pi's `pi-ai` provider-normalization + JSONL session-tree are its strengths (worth adopting as a library layer above `pai-runtimes`); Pi's zero-sandbox is its weakness → it runs INSIDE the fleet guardrail/per-tenant sandbox.
+- Pre-existing gap (NOT caused by this work): `multillm-gateway` is inactive on the VM — the gateway/agent-os layer was never deployed here (only PAI CLIs + deps + runtimes). Runtimes reference the gateway URL for routing but the service needs `install_multillm_gateway`/`install_agent_os` deploys. Surfaced for a follow-up deploy.
+- Follow-ups (principal decisions): (1) evaluate `@earendil-works/pi-ai` as PAI's in-process provider layer; (2) adopt Pi supply-chain hardening for PAI TS; (3) add Pi to `~/.claude/PAI/ALGORITHM/capabilities.md` producer registry by hand.
