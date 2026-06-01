@@ -1,7 +1,7 @@
 #!/bin/bash
 # OCI Remote Development Server - Interactive Setup Wizard
 # =========================================================
-# Creates .env configuration interactively
+# Creates .env.local configuration interactively (git-ignored)
 
 set -e
 
@@ -376,7 +376,7 @@ main() {
     prompt GITHUB_TOKEN "GitHub Personal Access Token" ""
 
     # ========== Generate .env ==========
-    echo -e "\n${CYAN}Generating .env configuration...${NC}"
+    echo -e "\n${CYAN}Generating .env.local configuration...${NC}"
 
     cat > "$ENV_FILE" << EOF
 # Remote Development VM Configuration
