@@ -179,7 +179,7 @@ Good for long refactors or batch work you want to run while disconnected.
 
 ---
 
-## 9. Configure your agents (inference providers + the Telegram bridge)
+## 9. Configure your agents (inference providers + endpoints)
 
 You manage your own agent configuration. Here's the data your agents need and where it goes.
 
@@ -215,33 +215,17 @@ hermes -z "ping"        # verify you get a real answer back
 
 Hermes config lives per-user in `~/.hermes/{.env, SOUL.md, config.yaml}` (keep them `chmod 600`). `agy` and `claude`/`codex` similarly read your own per-user config — never a shared key.
 
-### Drive an agent from Telegram/WhatsApp (the VM bridge)
+### Telegram bridge — operated by the admin, not you
 
-The bridge lets a chat message drive a durable agent session on the VM. The operator's PAI (on their Mac) registers your VM session as a remote-code session; input is base64-encoded over SSH and typed into your agent's tmux pane (so hostile text can't execute as a command). To wire your **own** session:
+There's an optional Telegram→VM bridge that lets a chat message drive a durable agent session on the VM. **You don't set this up, and you never touch the admin's machine.** It runs entirely on the admin's own computer (their PAI registers a VM session and types into its tmux pane over SSH).
+
+Your only part is normal VM work: start durable sessions with `agentctl` (Section 6) and configure your own agents (above). If you'd ever like one of *your* VM sessions driven from a chat, ask the admin and they wire it from their side — nothing for you to install or run.
 
 ```bash
-# 1. On the VM (as you): start the durable session you want driven
+# Your side is just a normal durable session on the VM, e.g.:
 agentctl start hermes -p mywork -d ~/shared-workspace/mywork
-agentctl ls                      # note the tmux session name (colons -> underscores,
-                                 #   e.g. agent:mywork:hermes  ->  agent_mywork_hermes_)
-
-# 2. On the operator Mac: an ~/.ssh/config alias for you, e.g.
-#   Host devvm-royce
-#       HostName <VM_PUBLIC_IP>      (or 10.200.200.1 over WireGuard)
-#       User royce
-#       IdentityFile ~/.ssh/id_rsa_royce
-#       IdentitiesOnly yes
-
-# 3. On the operator Mac: register it against YOUR chat id
-bun scripts/register_vm_session.ts \
-  --id royce-hermes \
-  --channel telegram:<YOUR_TELEGRAM_CHAT_ID> \
-  --ssh-host devvm-royce \
-  --tmux-target agent_mywork_hermes_ \
-  --cwd /Volumes/ExternalNVME/GitHub/devvm
+agentctl ls          # lists your sessions
 ```
-
-Then select that session in Telegram and type — your reply is typed into the agent. (`register_vm_session.ts` requires `--cwd` to resolve inside an approved root such as `/Volumes/ExternalNVME/GitHub`.)
 
 ---
 
@@ -267,7 +251,6 @@ pair-claude {start|join|status|note|summary|kill}                 # shared/pair 
 git-whoami                                                        # confirm git identity
 agent-job  add ...                                                # unattended runs
 hermes     {-z "<prompt>"|model|chat}                             # headless / pick model / interactive
-register_vm_session.ts --id .. --channel telegram:.. --ssh-host .. --tmux-target ..   # arm Telegram bridge
 ```
 
 ---
