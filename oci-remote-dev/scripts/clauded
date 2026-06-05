@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# clauded — persistent, disconnect-proof Claude session for the smart-dispatcher team.
+#
+#   clauded                  start your persistent session (or attach if already running)
+#   clauded --continue       reconnect: attach if running, else resume your last conversation
+#   clauded -c               same as --continue
+#   clauded --dir <path>     run in <path> as its own session (work several folders at once)
+#   clauded --name <tag>     give this session an explicit name: sd-claude-$USER-<tag>
+#   clauded ls               list your running clauded sessions
+#
+# By default the session runs in "yolo" mode (--dangerously-skip-permissions) from
+# /opt/shared-dev, so unattended/persistent coding doesn't stall on permission prompts.
+#   clauded --no-yolo                keep permission prompts (or set CLAUDED_YOLO=0)
+#   clauded --dir apps/web           start in another folder (or set CLAUDED_DIR=/path)
+#   clauded --name review            run a second, separately-named session (or CLAUDED_NAME=review)
+# Any other extra flags are passed straight through to `claude`.
+#
+# The session runs inside tmux (sd-claude-$USER[-tag]) on the server, so dropping your
+# SSH/mosh connection leaves it running — reconnect with the SAME --dir/--name. Detach
+# with Ctrl-b d (it keeps running). Exiting claude ENDS the session. Force-kill any with:
+#   tmux kill-session -t <name>      # see names via `clauded ls`
+# Running clauded from inside another tmux session switches you in (no nested-tmux error).
+#
+# On launch it converges YOUR ~/.claude plugins/skills onto the shared team set
+# (/opt/shared-dev/.claude-team/team-plugins.json) so the whole team uses the same stack.
+set -euo pipefail
+
+USER_NAME="$(id -un)"
+
+# sanitize an arbitrary string into a tmux-safe session slug
+slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9' '-' | sed -e 's/-\{2,\}/-/g' -e 's/^-//' -e 's/-$//'; }
+
+# `clauded ls` — show this user's running sessions, then exit.
+if [ "${1:-}" = "ls" ]; then
+  tmux ls 2>/dev/null | grep -E "^sd-claude-${USER_NAME}(-|:)" || echo "clauded: no running sessions for ${USER_NAME}"
+  exit 0
+fi
+
+CONTINUE=0
+YOLO="${CLAUDED_YOLO:-1}"   # default: run claude with --dangerously-skip-permissions
+DIR="${CLAUDED_DIR:-}"
+TAG="${CLAUDED_NAME:-}"
+EXTRA=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -c|--continue) CONTINUE=1 ;;
+    --no-yolo) YOLO=0 ;;
+    --dangerously-skip-permissions) YOLO=1 ;;   # explicit; folded into CMD below, don't duplicate
+    --dir) shift; DIR="${1:?clauded: --dir needs a path}" ;;
+    --dir=*) DIR="${1#--dir=}" ;;
+    --name) shift; TAG="${1:?clauded: --name needs a value}" ;;
+    --name=*) TAG="${1#--name=}" ;;
+    *) EXTRA+=("$1") ;;
+  esac
+  shift
+done
+
+# Resolve the working directory (relative --dir is taken from your current folder).
+WORKDIR="${DIR:-/opt/shared-dev}"
+case "$WORKDIR" in
+  /*) : ;;
+  *)  WORKDIR="$(cd "$WORKDIR" 2>/dev/null && pwd)" || { echo "clauded: no such dir: $DIR" >&2; exit 1; } ;;
+esac
+
+# One session per folder so you can run several at once. The default folder keeps the
+# legacy name (sd-claude-$USER); other folders get a per-folder suffix; --name overrides.
+if [ -n "$TAG" ]; then
+  SUFFIX="-$(slug "$TAG")"
+elif [ "$WORKDIR" = "/opt/shared-dev" ]; then
+  SUFFIX=""
+elif [ "${WORKDIR#/opt/shared-dev/}" != "$WORKDIR" ]; then
+  SUFFIX="-$(slug "${WORKDIR#/opt/shared-dev/}")"
+else
+  SUFFIX="-$(slug "$(basename "$WORKDIR")")"
+fi
+SESSION="sd-claude-${USER_NAME}${SUFFIX}"
+
+MANIFEST="/opt/shared-dev/.claude-team/team-plugins.json"
+CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+
+# Attach to $SESSION, switching client when already inside tmux (avoids the
+# "sessions should be nested" error) and handling non-TTY callers.
+attach() {
+  if [ -n "${TMUX:-}" ]; then exec tmux switch-client -t "$SESSION"; fi
+  if [ -t 1 ]; then exec tmux attach -t "$SESSION"; fi
+  echo "clauded: not a TTY; attach with:  tmux attach -t $SESSION"; exit 0
+}
+
+# 1) Converge plugins/skills onto the shared team set (idempotent; edits only YOUR config).
+if [ -f "$MANIFEST" ] && command -v node >/dev/null 2>&1; then
+  MANIFEST="$MANIFEST" CFG="$CFG" node <<'NODE' || echo "clauded: plugin sync skipped" >&2
+const fs = require('fs'), path = require('path');
+const man = JSON.parse(fs.readFileSync(process.env.MANIFEST, 'utf8'));
+const cfgPath = process.env.CFG;
+let cfg = {};
+try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch (_) {}
+cfg.enabledPlugins ||= {};
+cfg.extraKnownMarketplaces ||= {};
+let changed = false;
+for (const [k, v] of Object.entries(man.enabledPlugins || {})) {
+  if (cfg.enabledPlugins[k] !== v) { cfg.enabledPlugins[k] = v; changed = true; }
+}
+for (const [k, v] of Object.entries(man.extraKnownMarketplaces || {})) {
+  if (!cfg.extraKnownMarketplaces[k]) { cfg.extraKnownMarketplaces[k] = v; changed = true; }
+}
+if (changed) {
+  fs.mkdirSync(path.dirname(cfgPath), { recursive: true });
+  fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n');
+  console.error('clauded: synced team plugins into ' + cfgPath);
+}
+NODE
+fi
+
+# 2) Attach if the session already exists (this is what reconnect after a drop does).
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  echo "clauded: attaching existing session $SESSION"
+  attach
+fi
+
+# 3) Otherwise create a persistent session with claude AS the session command, so a
+#    disconnect just detaches (session keeps running) but exiting claude ends the session.
+CMD="claude"
+[ "$CONTINUE" = 1 ] && CMD="$CMD --continue"
+[ "$YOLO" = 1 ] && CMD="$CMD --dangerously-skip-permissions"
+[ "${#EXTRA[@]}" -gt 0 ] && CMD="$CMD ${EXTRA[*]}"
+
+tmux new-session -d -s "$SESSION" -c "$WORKDIR" "$CMD"
+echo "clauded: started persistent session $SESSION  ($CMD)"
+attach

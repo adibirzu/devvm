@@ -156,6 +156,50 @@
       set -g destroy-unattached off
   loop: "{{ developers }}"
 
+# ── clauded: one-command persistent, disconnect-proof Claude session ──────────
+# Shared launcher under /opt/shared-dev so the whole team uses one stack. It runs
+# claude inside tmux (sd-claude-$USER[-tag]); a disconnect just detaches, exiting
+# claude ends the session, and --dir/--name give a separate session per folder.
+- name: Resilience | Create shared clauded team directory
+  ansible.builtin.file:
+    path: /opt/shared-dev/.claude-team
+    state: directory
+    owner: root
+    group: developers
+    mode: '2775'
+
+- name: Resilience | Install clauded (persistent, disconnect-proof Claude session launcher)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/clauded"
+    dest: /opt/shared-dev/.claude-team/clauded
+    owner: root
+    group: developers
+    mode: '0775'
+
+- name: Resilience | Seed the shared clauded team-plugins manifest (team-editable; never clobbered)
+  ansible.builtin.copy:
+    dest: /opt/shared-dev/.claude-team/team-plugins.json
+    owner: root
+    group: developers
+    mode: '0664'
+    force: false   # create only if absent — the team edits this live
+    content: |
+      {
+        "_comment": "Shared team plugin/skill set for `clauded`. Edit here to change what the team uses; `clauded` merges this into each user's own ~/.claude/settings.json on launch (additive, never removes your extras).",
+        "enabledPlugins": {
+          "andrej-karpathy-skills@karpathy-skills": true,
+          "ecc@ecc": true
+        },
+        "extraKnownMarketplaces": {
+          "karpathy-skills": {
+            "source": { "source": "github", "repo": "forrestchang/andrej-karpathy-skills" }
+          },
+          "ecc": {
+            "source": { "source": "git", "url": "https://github.com/affaan-m/ECC.git" }
+          }
+        }
+      }
+
 - name: Resilience | sshd keepalive + tolerate brief link loss
   ansible.builtin.copy:
     dest: /etc/ssh/sshd_config.d/10-resilience.conf
