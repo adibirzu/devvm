@@ -1,0 +1,65 @@
+---
+# clauded — shared, persistent, disconnect-proof Claude session launcher.
+#
+# Included once from playbook.yml under the `clauded` tag (with `apply`), so the
+# whole feature — shared script + team manifest + each developer's alias — can be
+# rolled out on its own against existing hosts:
+#   ansible-playbook -i configs/hosts.ini --extra-vars @configs/ansible_vars.json \
+#       ansible/playbook.yml --tags clauded
+# A normal full deploy installs it too; every task here is idempotent.
+
+- name: clauded | Create shared team directory
+  ansible.builtin.file:
+    path: /opt/shared-dev/.claude-team
+    state: directory
+    owner: root
+    group: developers
+    mode: '2775'
+
+- name: clauded | Install launcher (persistent, disconnect-proof Claude session)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/clauded"
+    dest: /opt/shared-dev/.claude-team/clauded
+    owner: root
+    group: developers
+    mode: '0775'
+
+- name: clauded | Seed the team-plugins manifest (team-editable; never clobbered)
+  ansible.builtin.copy:
+    dest: /opt/shared-dev/.claude-team/team-plugins.json
+    owner: root
+    group: developers
+    mode: '0664'
+    force: false   # create only if absent — the team edits this live
+    content: |
+      {
+        "_comment": "Shared team plugin/skill set for `clauded`. Edit here to change what the team uses; `clauded` merges this into each user's own ~/.claude/settings.json on launch (additive, never removes your extras).",
+        "enabledPlugins": {
+          "andrej-karpathy-skills@karpathy-skills": true,
+          "ecc@ecc": true
+        },
+        "extraKnownMarketplaces": {
+          "karpathy-skills": {
+            "source": { "source": "github", "repo": "forrestchang/andrej-karpathy-skills" }
+          },
+          "ecc": {
+            "source": { "source": "git", "url": "https://github.com/affaan-m/ECC.git" }
+          }
+        }
+      }
+
+- name: clauded | Per-user ~/.bashrc alias (shared launcher)
+  ansible.builtin.blockinfile:
+    path: "/home/{{ item.name }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED — clauded"
+    create: true
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: '0644'
+    block: |
+      # Claude Code: persistent, disconnect-proof team session (shared launcher).
+      # Survives disconnects (tmux+mosh); reconnect with `clauded --continue`.
+      # Work several folders at once with `clauded --dir <path>` / `clauded --name <tag>`;
+      # `clauded ls` lists your sessions. Extra flags pass straight through to `claude`.
+      alias clauded='/opt/shared-dev/.claude-team/clauded'
+  loop: "{{ developers }}"
