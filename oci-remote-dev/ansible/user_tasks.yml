@@ -91,21 +91,6 @@
       # (creds live in ~/.config/gh, never shared) or add your own key to ~/.ssh.
       # Never set a shared GITHUB_TOKEN — it would make everyone push as one account.
 
-- name: Per-user clauded alias (shared persistent Claude session launcher)
-  ansible.builtin.blockinfile:
-    path: "/home/{{ dev.name }}/.bashrc"
-    marker: "# {mark} ANSIBLE MANAGED — clauded"
-    create: true
-    owner: "{{ dev.name }}"
-    group: "{{ dev.name }}"
-    mode: '0644'
-    block: |
-      # Claude Code: persistent, disconnect-proof team session (shared launcher).
-      # Survives disconnects (tmux+mosh); reconnect with `clauded --continue`.
-      # Work several folders at once with `clauded --dir <path>` / `clauded --name <tag>`;
-      # `clauded ls` lists your sessions. Extra flags pass straight through to `claude`.
-      alias clauded='/opt/shared-dev/.claude-team/clauded'
-
 - name: Per-user SSH config routes github.com through this account's own key
   ansible.builtin.blockinfile:
     path: "/home/{{ dev.name }}/.ssh/config"
