@@ -11,6 +11,7 @@ You drive it from your Mac with the native **cmux** agent workspace over the VPN
 - **👥 Isolated multi-developer sandboxes** — dedicated UNIX accounts (`${ADMIN_USERNAME}`, `${DEV_N_NAME}`, … unlimited) each with their own `code-server`, XFCE/XRDP desktop, shell, OAuth sessions, and API keys. Nothing leaks between users.
 - **🔐 Split-tunnel WireGuard VPN** — every service is reachable **only** over the private `${WG_NETWORK}` tunnel. Defaults are tuned so the VPN never hijacks your Mac's DNS or internet routing.
 - **🤖 Shared MultiLLM gateway** — a system service that proxies Claude / Codex / Gemini / Ollama traffic, tracks token + cost usage per developer, and serves a live dashboard over the VPN.
+- **☁️ OCI Administrator skill pack** — [`oci-skills`](https://github.com/adibirzu/oci-skills) is cloned to `/opt/oci-skills` and installed into every developer's Claude Code, Codex, Gemini CLI, and Antigravity. Gives each agent safe, tenancy-agnostic OCI admin skills (IAM, Security & Compliance, Observability & DB, Networking & Compute) with tenancy preflight, dry-run guards, and secret redaction built in.
 - **🖥️ cmux-driven local workflow** — run the native macOS agent workspace locally and connect its panes to the remote sandbox over WireGuard.
 - **🤝 Live pair programming** — `pair-claude` shares one AI coding session across developers via a group-owned tmux socket.
 - **⚡ Idempotent Ansible** — decoupled from cloud-init (dodging OCI's 32 KB metadata limit); a tiny boot hook brings up networking + WireGuard, then Ansible configures everything else.
@@ -42,6 +43,9 @@ You drive it from your Mac with the native **cmux** agent workspace over the VPN
         │   :80   Developer landing dashboard (per-user cards)                        │
         │   :${MULTILLM_GATEWAY_PORT} MultiLLM gateway + /dashboard                   │
         │   :${RDP_PORT} XRDP visual desktops (XFCE, one session per user)            │
+        │                                                                            │
+        │   /opt/multillm  · /opt/agent-os  · /opt/oci-skills  (shared tool sources)  │
+        │   └─ installed per-user into ~/.claude ~/.codex ~/.gemini ~/.antigravity    │
         │                                                                            │
         │   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐                    │
         │   │ ${ADMIN_USERNAME} │ │ ${DEV_2_NAME} │ │ ${DEV_3_NAME} │   … unlimited   │
@@ -345,6 +349,59 @@ read-only verb allowlist refuses anything else. Defense in depth under the guard
 
 ---
 
+## ☁️ OCI Administrator Skill Pack
+
+Where Agent-OS *governs* what agents may do, the **`oci-skills`** pack gives them
+the *know-how* to administer OCI safely. The public repo
+[`adibirzu/oci-skills`](https://github.com/adibirzu/oci-skills) is cloned to
+`/opt/oci-skills` and installed per-developer into all four agent harnesses, so
+every account's Claude Code, Codex, Gemini CLI, and Antigravity gain the same
+tenancy-agnostic OCI administration skills.
+
+### What it adds
+
+Four domain plugins behind one safety-first core:
+
+| Plugin | Covers |
+|--------|--------|
+| **oci-iam-admin** | Users, groups, dynamic groups, policies (least-privilege review), compartments, budgets, quotas, **service limits**, tags, Identity Domains. |
+| **oci-security-compliance** | Cloud Guard, Vault/KMS, Security Zones, WAF, Audit, CIS / ISO-42001 / sovereignty scanning, secret redaction. |
+| **oci-observability-db** | Monitoring & alarms, Logging, Log Analytics, APM, Notifications, Service Connector, Database Management, Operations Insights. |
+| **oci-networking-compute** | VCN, subnets, NSGs, route tables, gateways, load balancers, OKE, compute, OCIR. |
+
+The shared core enforces the same discipline as the guardrail layer, in-skill:
+**preflight the tenancy** (resolved by name, never raw OCID), **read before
+write**, **confirm/dry-run** destructive operations, and **never print or commit
+OCIDs/IPs/secrets** (a `redact.py` gate, with `--strict` for live output).
+
+### How it's provisioned
+
+```bash
+# system source (cloned once, group-accessible to developers)
+/opt/oci-skills
+
+# installed per-developer by Ansible into every enabled harness
+~/.claude/skills/oci-administrator
+~/.codex/skills/oci-administrator
+~/.gemini/extensions/oci-skills
+~/.antigravity/skills/oci-administrator
+```
+
+Run just this layer against a live VM with the `oci_skills` tag:
+
+```bash
+ansible-playbook -i configs/hosts.ini --extra-vars @configs/ansible_vars.json \
+  ansible/playbook.yml --tags oci_skills --check --diff   # preview
+ansible-playbook -i configs/hosts.ini --extra-vars @configs/ansible_vars.json \
+  ansible/playbook.yml --tags oci_skills                  # apply
+```
+
+> Toggle with `install_oci_skills` (default true); pin a fork/branch with
+> `oci_skills_git_url` / `oci_skills_git_version`. Antigravity install is gated
+> by `install_antigravity` (default true).
+
+---
+
 ## 🌐 WireGuard VPN & Mac Routing
 
 By design, this is a **split tunnel**: only the `10.200.200.0/24` VPN subnet is routed through WireGuard. Your Mac keeps its normal internet path and its normal DNS.
@@ -433,6 +490,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | XFCE/XRDP desktops, Polkit fix | ✅ Implemented |
 | `pair-claude` shared sessions, `/opt/shared-dev` | ✅ Implemented |
 | AI CLIs (Claude / Codex / Gemini), Cursor | ✅ Implemented |
+| OCI Administrator skill pack (`oci-skills`) installed into all four harnesses | ✅ Implemented |
 | Shared MultiLLM gateway service + `/dashboard` over VPN | ✅ Implemented |
 | Per-user MultiLLM hooks, launchers, MCP registration | ✅ Implemented |
 | Per-account GitHub identity in shared repos (`git-whoami`) | ✅ Implemented |
