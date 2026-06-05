@@ -462,6 +462,17 @@
       ansible.builtin.include_tasks: resilience_tasks.yml
       when: install_resilience_layer | default(true)
 
+    # Tagged so the whole clauded feature can be rolled out on its own with
+    # `--tags clauded` (and safely skipped with `--skip-tags clauded`). `apply`
+    # propagates the tag to every task in the included file.
+    - name: Configure clauded (shared persistent Claude session launcher)
+      ansible.builtin.include_tasks:
+        file: clauded_tasks.yml
+        apply:
+          tags: [clauded]
+      when: install_resilience_layer | default(true)
+      tags: [clauded]
+
     - name: Configure Agent-OS (tool guardrails, MCP registry, OCI read-only MCP)
       ansible.builtin.include_tasks: agent_os_tasks.yml
       when: install_agent_os | default(true)
