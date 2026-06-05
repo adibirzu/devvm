@@ -23,6 +23,13 @@
     multillm_source_path: ""
     multillm_git_url: "https://github.com/adibirzu/multillm.git"
     multillm_git_version: "main"
+    # OCI Administrator skill pack (Claude/Codex/Gemini/Antigravity) — installed
+    # per-developer from /opt/oci-skills. Public repo, works OOTB.
+    install_oci_skills: true
+    install_antigravity: true
+    oci_skills_source_path: ""
+    oci_skills_git_url: "https://github.com/adibirzu/oci-skills.git"
+    oci_skills_git_version: "main"
     # developers list will be passed as extra_vars
     developers: []
     wg_server_ip: "10.200.200.1"
@@ -406,6 +413,47 @@
             mode: '0775'
             recurse: false
 
+    - name: Provision the OCI Administrator skill pack source
+      when: install_oci_skills | default(true)
+      tags: [oci_skills]
+      block:
+        # Prefer a local checkout beside the project (offline / development);
+        # otherwise clone the public repo so a fresh deploy works OOTB.
+        - name: Check for a local oci-skills checkout on the controller
+          ansible.builtin.stat:
+            path: "{{ playbook_dir }}/{{ oci_skills_source_path | default('') }}"
+          delegate_to: localhost
+          become: false
+          register: oci_skills_local
+          when: (oci_skills_source_path | default('')) | length > 0
+
+        - name: Copy the local oci-skills source to the VM (offline / development)
+          ansible.builtin.copy:
+            src: "{{ oci_skills_source_path }}"
+            dest: /opt/
+            owner: root
+            group: developers
+            mode: '0775'
+          when: oci_skills_local.stat is defined and oci_skills_local.stat.exists
+
+        - name: Clone oci-skills from GitHub (default — public repo, works OOTB)
+          ansible.builtin.git:
+            repo: "{{ oci_skills_git_url | default('https://github.com/adibirzu/oci-skills.git') }}"
+            dest: /opt/oci-skills
+            version: "{{ oci_skills_git_version | default('main') }}"
+            depth: 1
+            force: true
+          when: not (oci_skills_local.stat is defined and oci_skills_local.stat.exists)
+
+        - name: Ensure /opt/oci-skills is group-accessible to developers
+          ansible.builtin.file:
+            path: /opt/oci-skills
+            state: directory
+            owner: root
+            group: developers
+            mode: '0775'
+            recurse: false
+
     - name: Configure MultiLLM team usage monitoring (gateway + per-user collectors)
       ansible.builtin.include_tasks: multillm_tasks.yml
       when: install_multillm_gateway | default(true)
@@ -423,6 +471,7 @@
       loop: "{{ developers }}"
       loop_control:
         loop_var: dev
+      tags: [oci_skills, user_config]
 
     - name: Install AI CLI agents globally
       block:
@@ -444,7 +493,7 @@
 
         - name: Install Gemini CLI
           ansible.builtin.npm:
-            name: "@google/generative-ai-cli"
+            name: "@google/gemini-cli"
             global: true
             state: present
           when: install_gemini

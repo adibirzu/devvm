@@ -107,12 +107,33 @@
           IdentitiesOnly yes
 
 - name: Install MultiLLM gateway for developer
+  when: install_multillm_gateway | default(true)
   ansible.builtin.shell: |
     export PIP_BREAK_SYSTEM_PACKAGES=1
     bash /opt/multillm/install.sh
   args:
     creates: "/home/{{ dev.name }}/.local/bin/claude-multillm"
   become_user: "{{ dev.name }}"
+  ignore_errors: true
+
+# Install the OCI Administrator skill pack into each enabled agent harness for
+# this developer (Claude Code, Codex, Gemini CLI, Antigravity). install.sh is
+# idempotent and only reads /opt/oci-skills, writing into the user's own
+# ~/.claude, ~/.codex, ~/.gemini, ~/.antigravity skill directories.
+- name: Install OCI Administrator skill pack for developer
+  when: install_oci_skills | default(true)
+  tags: [oci_skills]
+  become_user: "{{ dev.name }}"
+  vars:
+    # Build the harness list in Ansible (reliable), not via in-shell Jinja. A
+    # single pure {{ }} expression returns a native list (not a string), so the
+    # argv concatenation below stays a proper list.
+    oci_skills_harnesses: "{{ (['claude'] if (install_claude_code | default(true)) else []) + (['codex'] if (install_codex | default(true)) else []) + (['gemini'] if (install_gemini | default(true)) else []) + (['antigravity'] if (install_antigravity | default(true)) else []) }}"
+  # Run the executable directly (its shebang is bash); avoids /bin/sh + pipefail.
+  ansible.builtin.command:
+    argv: "{{ ['/opt/oci-skills/install.sh'] + oci_skills_harnesses }}"
+  register: oci_skills_install
+  changed_when: "'install' in (oci_skills_install.stdout | default(''))"
   ignore_errors: true
 
 - name: Register Claude Notification hook (feeds the board's notification ring)
