@@ -546,8 +546,9 @@ All of `configs/` (WireGuard keys, deployment info, rendered vars) and `.env.loc
 pip install -r requirements-test.txt
 make check          # black + ruff + security gate + ansible syntax + pytest
 # or individually:
-make test           # pytest (159 tests: deployers, WireGuard renderer, agent-OS,
-                    #          guardrails, control-plane, tenant scoping, jobs, …)
+make test           # pytest (214 tests: deployers, WireGuard renderer, agent-OS,
+                    #          guardrails, control-plane, apply-from-queue, tenant
+                    #          scoping, jobs, …)
 make lint           # black --check + ruff
 make gate           # security_gate.py — blocks OCIDs / IPs / secrets in the tree
 ```
@@ -578,9 +579,58 @@ curl -H "X-Admin-Token: $TOKEN" -d '{"name":"carlos","ssh_key":"ssh-ed25519 AAAA
 curl http://10.200.200.1:8082/pending          # review the queue
 ```
 
-Account changes are **queued** (`/etc/agent-os/pending-changes.jsonl`), never auto-run —
-add the reviewed entries as `DEV_N_*` in `.env` and `make deploy` to materialize them.
-Budgets (`POST /budgets`) apply live.
+Account changes are **queued** (`/etc/agent-os/pending-changes.jsonl`), never auto-run by
+the web service. An admin reviews the queue, then materializes it from the controller:
+
+```bash
+scp <vm>:/etc/agent-os/pending-changes.jsonl configs/     # fetch the reviewed queue
+make apply-pending ARGS="--queue configs/pending-changes.jsonl --dry-run"   # see the plan
+make apply-pending ARGS="--queue configs/pending-changes.jsonl"             # apply it
+```
+
+`scripts/apply_pending.py` validates every entry and runs `ansible/apply_changes.yml`,
+which includes the **same** `developer_account_tasks.yml` → `user_tasks.yml` a
+from-scratch deploy runs — so a runtime-added developer gets the identical home layout,
+code-server unit, per-user git identity, MultiLLM client, MCP config and agent hooks.
+There is no second, hand-rolled `useradd` path. Toggles and network vars are read back
+from the deploy's own `configs/ansible_vars.json`, so nothing drifts.
+
+Each entry is applied by its own Ansible run and then retired to a durable audit log,
+`/etc/agent-os/applied-changes.jsonl` (`--audit` to relocate):
+
+| status | meaning | queue |
+|---|---|---|
+| `applied` | Ansible succeeded | removed |
+| `failed` | Ansible exited non-zero (reason + rc audited) | **kept for retry** |
+| `rejected` | can never succeed (bad name/key/port/IP) | removed |
+| `superseded` | a later entry for the same developer won | removed |
+| `already_applied` | change-id already in the audit log | removed |
+
+Re-runs are therefore idempotent and partial failures are safe: only the failures come
+back. Ports and VPN IPs are allocated one past the highest already in use, both within a
+batch and across runs.
+
+**Removal is safe by default.** `DELETE /developers/<name>` + `make apply-pending`
+**disables** the account — login locked, shell set to `nologin`, `authorized_keys` moved
+to `authorized_keys.revoked`, sudo and `developers` group membership revoked, code-server
+stopped — and **leaves `/home/<name>` and all of its work untouched**. Deleting data is a
+separate, explicit opt-in that is never inferred from a queue entry:
+
+```bash
+make apply-pending ARGS="--purge"   # DESTRUCTIVE: also deletes the account and /home/<name>
+```
+
+Two things apply-from-queue deliberately does **not** do: it does not issue a WireGuard
+peer for a new developer (VPN key material is generated at deploy time — run
+`scripts/wg_config.py` or a redeploy for that), and it does not edit `.env`. Mirror each
+applied entry as `DEV_N_*` in `.env` so a future from-scratch redeploy keeps the
+developer. Budgets (`POST /budgets`) still apply live, no queue involved.
+
+Running it on the VM itself instead of the controller (needs Ansible there):
+
+```bash
+python3 scripts/apply_pending.py --inventory 'localhost,' --connection local
+```
 
 ---
 

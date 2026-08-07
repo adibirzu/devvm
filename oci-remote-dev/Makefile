@@ -1,14 +1,16 @@
 # OCI Agentic Dev OS — developer convenience targets.
-.PHONY: help test lint fmt gate ansible-check check deploy verify
+.PHONY: help test lint fmt gate ansible-check check deploy verify apply-pending
 
 help:
-	@echo "make test     - run the unit test suite"
-	@echo "make lint     - black --check + ruff (CI parity)"
-	@echo "make fmt      - auto-format with black + ruff --fix"
-	@echo "make gate     - run the security gate scanner"
-	@echo "make check    - lint + gate + ansible-check + test (full local CI)"
-	@echo "make deploy   - ./scripts/deploy.sh (pass ARGS=...)"
-	@echo "make verify   - post-deploy verification (run on the VM)"
+	@echo "make test          - run the unit test suite"
+	@echo "make lint          - black --check + ruff (CI parity)"
+	@echo "make fmt           - auto-format with black + ruff --fix"
+	@echo "make gate          - run the security gate scanner"
+	@echo "make check         - lint + gate + ansible-check + test (full local CI)"
+	@echo "make deploy        - ./scripts/deploy.sh (pass ARGS=...)"
+	@echo "make verify        - post-deploy verification (run on the VM)"
+	@echo "make apply-pending - materialize the control-plane's queued developer"
+	@echo "                     changes via Ansible (pass ARGS=--dry-run first)"
 
 test:
 	python3 -m pytest tests/ -q
@@ -26,12 +28,19 @@ gate:
 
 ansible-check:
 	ansible-playbook --syntax-check ansible/playbook.yml
+	ansible-playbook --syntax-check ansible/apply_changes.yml
 
 check: lint gate ansible-check test
 	@echo "All local CI checks passed."
 
 deploy:
 	./scripts/deploy.sh $(ARGS)
+
+# Consume /etc/agent-os/pending-changes.jsonl (the control-plane's queue) and
+# materialize each entry through ansible/apply_changes.yml. Removals only
+# disable accounts; ARGS=--purge is the destructive opt-in.
+apply-pending:
+	python3 scripts/apply_pending.py $(ARGS)
 
 verify:
 	./scripts/verify.sh
