@@ -6,10 +6,14 @@ runs real provisioning — the assertions are on the exact commands and extra-va
 the real runner *would* receive.
 """
 
+import contextlib
+import io
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
@@ -21,6 +25,8 @@ from scripts.apply_pending import (
     developer_vars,
     execute_plan,
     extra_vars_for,
+    main,
+    merge_queue_lines,
     merge_roster,
     next_code_server_port,
     next_wg_ip,
@@ -114,6 +120,16 @@ class TestQueueParsing(unittest.TestCase):
         entries, malformed = parse_queue("{not json\n" + json.dumps(add()) + "\n[1,2]\n")
         self.assertEqual(len(entries), 1)
         self.assertEqual(len(malformed), 2)
+
+    def test_merge_queue_lines_preserves_entries_enqueued_mid_run(self) -> None:
+        late = add("royce")
+        lines = merge_queue_lines([], json.dumps(late) + "\n", {change_id(add())})
+        self.assertEqual(lines, [json.dumps(late)])
+
+    def test_merge_queue_lines_does_not_duplicate_a_kept_entry(self) -> None:
+        entry = add()
+        lines = merge_queue_lines([entry], json.dumps(entry) + "\n", set())
+        self.assertEqual(lines, [json.dumps(entry)])
 
     def test_change_id_is_stable_and_content_addressed(self) -> None:
         self.assertEqual(change_id(add()), change_id(dict(reversed(list(add().items())))))
@@ -434,6 +450,172 @@ class TestAuditAndRoster(unittest.TestCase):
         actions = execute_plan(plan_changes([add()], existing=base["developers"]), runner, base)
         merged = merge_roster(base, actions)
         self.assertEqual(len(merged["developers"]), 1)
+
+
+class TestMainWorkflow(unittest.TestCase):
+    """End-to-end through main(), with the Ansible boundary mocked.
+
+    `make_runner` is patched to a recorder, so no test ever shells out to
+    ansible-playbook or touches anything outside its own temp directory.
+    """
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.queue = self.root / "pending-changes.jsonl"
+        self.audit = self.root / "applied-changes.jsonl"
+        self.base_vars = self.root / "ansible_vars.json"
+
+    def enqueue(self, *changes) -> None:
+        self.queue.write_text(
+            "".join(json.dumps(c) + "\n" for c in changes), encoding="utf-8"
+        )
+
+    def run_main(self, *extra_args, rc=0, on_run=None):
+        calls = []
+
+        def runner(extra_vars):
+            calls.append(extra_vars)
+            if on_run is not None:
+                on_run(extra_vars)
+            return rc, "ok"
+
+        argv = [
+            "--queue",
+            str(self.queue),
+            "--audit",
+            str(self.audit),
+            "--base-vars",
+            str(self.base_vars),
+            "--inventory",
+            "localhost,",
+            "--connection",
+            "local",
+            *extra_args,
+        ]
+        out = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch("scripts.apply_pending.make_runner", return_value=runner)
+            )
+            stack.enter_context(
+                mock.patch(
+                    "scripts.apply_pending.shutil.which",
+                    return_value="/usr/bin/ansible-playbook",
+                )
+            )
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(out))
+            code = main(argv)
+        return code, calls, out.getvalue()
+
+    def test_check_mode_runs_ansible_but_mutates_nothing(self) -> None:
+        self.base_vars.write_text(
+            json.dumps(
+                {
+                    "developers": [
+                        {"name": "adi", "code_server_port": 8443, "wg_ip": "10.200.200.2"}
+                    ]
+                }
+            )
+        )
+        base_before = self.base_vars.read_text()
+        self.enqueue(add())
+        queue_before = self.queue.read_text()
+
+        code, calls, _ = self.run_main("--check")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(self.audit.exists())
+        self.assertEqual(self.queue.read_text(), queue_before)
+        self.assertEqual(self.base_vars.read_text(), base_before)
+
+    def test_a_checked_entry_is_still_applied_by_the_next_real_run(self) -> None:
+        self.base_vars.write_text(json.dumps({"developers": []}))
+        self.enqueue(add())
+        self.run_main("--check")
+
+        code, calls, _ = self.run_main()
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.queue.read_text(), "")
+        audit = [json.loads(line) for line in self.audit.read_text().splitlines()]
+        self.assertEqual([r["status"] for r in audit], ["applied"])
+
+    def test_enqueue_during_apply_survives_the_queue_rewrite(self) -> None:
+        self.base_vars.write_text(json.dumps({"developers": []}))
+        self.enqueue(add("carlos"))
+        late = add("royce")
+
+        def enqueue_late(_extra_vars):
+            with self.queue.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(late) + "\n")
+
+        code, calls, _ = self.run_main(on_run=enqueue_late)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1)
+        kept = [json.loads(line) for line in self.queue.read_text().splitlines()]
+        self.assertEqual(kept, [late])
+
+    def test_garbage_enqueued_during_apply_is_not_silently_lost(self) -> None:
+        self.base_vars.write_text(json.dumps({"developers": []}))
+        self.enqueue(add("carlos"))
+
+        def scribble(_extra_vars):
+            with self.queue.open("a", encoding="utf-8") as fh:
+                fh.write("{not json\n")
+
+        code, _, _ = self.run_main(on_run=scribble)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(self.queue.read_text(), "{not json\n")
+
+    def test_missing_base_vars_fails_fast_when_an_add_needs_allocation(self) -> None:
+        self.enqueue(add())
+        queue_before = self.queue.read_text()
+
+        code, calls, out = self.run_main()
+
+        self.assertEqual(code, 2)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.queue.read_text(), queue_before)
+        self.assertFalse(self.audit.exists())
+        self.assertIn("base-vars", out)
+
+    def test_missing_base_vars_is_fine_when_the_add_is_fully_specified(self) -> None:
+        self.enqueue(add(code_server_port=9000, wg_ip="10.200.200.9"))
+
+        code, calls, _ = self.run_main()
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["apply_add"][0]["code_server_port"], 9000)
+
+    def test_missing_base_vars_is_fine_for_a_removal(self) -> None:
+        self.enqueue(remove("royce"))
+
+        code, calls, _ = self.run_main()
+
+        self.assertEqual(code, 0)
+        self.assertEqual(calls[0]["apply_remove"], ["royce"])
+
+    def test_unwritable_audit_path_stops_the_run_before_ansible(self) -> None:
+        self.base_vars.write_text(json.dumps({"developers": []}))
+        blocker = self.root / "blocker"
+        blocker.write_text("")
+        self.enqueue(add())
+        queue_before = self.queue.read_text()
+
+        code, calls, out = self.run_main("--audit", str(blocker / "applied.jsonl"))
+
+        self.assertEqual(code, 2)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.queue.read_text(), queue_before)
+        self.assertIn("--audit", out)
 
 
 @unittest.skipIf(yaml is None, "PyYAML not installed")

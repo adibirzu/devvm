@@ -34,8 +34,12 @@
     insertafter: EOF
     state: present
 
+# Tags on a dynamic include are not inherited by nested includes, so the tags
+# playbook.yml puts on its include of THIS file must be repeated here or
+# `--tags oci_skills` / `--tags user_config` would never reach user_tasks.yml.
 - name: Configure {{ dev.name }}'s environment (dirs, code-server, git identity, MultiLLM, MCP)
   ansible.builtin.include_tasks: user_tasks.yml
+  tags: [oci_skills, user_config]
 
 - name: Enable and start code-server for {{ dev.name }}
   ansible.builtin.systemd:

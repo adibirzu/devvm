@@ -546,7 +546,7 @@ All of `configs/` (WireGuard keys, deployment info, rendered vars) and `.env.loc
 pip install -r requirements-test.txt
 make check          # black + ruff + security gate + ansible syntax + pytest
 # or individually:
-make test           # pytest (214 tests: deployers, WireGuard renderer, agent-OS,
+make test           # pytest (229 tests: deployers, WireGuard renderer, agent-OS,
                     #          guardrails, control-plane, apply-from-queue, tenant
                     #          scoping, jobs, …)
 make lint           # black --check + ruff
@@ -586,7 +586,13 @@ the web service. An admin reviews the queue, then materializes it from the contr
 scp <vm>:/etc/agent-os/pending-changes.jsonl configs/     # fetch the reviewed queue
 make apply-pending ARGS="--queue configs/pending-changes.jsonl --dry-run"   # see the plan
 make apply-pending ARGS="--queue configs/pending-changes.jsonl"             # apply it
+scp configs/pending-changes.jsonl <vm>:/etc/agent-os/pending-changes.jsonl  # sync the queue back
 ```
+
+The last step matters: apply rewrites only the local copy of the queue, so until it
+is copied back the VM still holds every already-applied entry — `GET /pending` would
+keep reporting them and the file would grow forever. (Re-fetching without syncing is
+still safe: the audit log makes re-applied entries no-ops.)
 
 `scripts/apply_pending.py` validates every entry and runs `ansible/apply_changes.yml`,
 which includes the **same** `developer_account_tasks.yml` → `user_tasks.yml` a

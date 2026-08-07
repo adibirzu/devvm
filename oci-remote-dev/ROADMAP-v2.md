@@ -188,7 +188,7 @@ Goal: manage developers, services, and budgets without SSH.
   applied/failed/rejected/superseded/already_applied; only failures stay queued, so
   re-runs are idempotent and partial failures are safe. Removals **disable** an account
   (locked, nologin, keys revoked, groups dropped) and preserve `/home/<name>`; `--purge`
-  is the explicit destructive opt-in. 55 tests, all mocking the Ansible boundary.
+  is the explicit destructive opt-in. 70 tests, all mocking the Ansible boundary.
 
 **Remaining:**
 - **VPN peer on apply** — a runtime-added developer still needs WireGuard key material
