@@ -7,9 +7,12 @@ set -uo pipefail
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 PASS=0; FAIL=0; WARN=0
+# Defaults match a cloud deploy (services on the WireGuard IP); a direct install
+# binds the loopback instead and exports these, so both paths verify the same way.
 WG_IP="${WG_SERVER_IP:-10.200.200.1}"
 GW_PORT="${MULTILLM_GATEWAY_PORT:-8080}"
 CP_PORT="${CONTROL_PLANE_PORT:-8082}"
+DASH_PORT="${DASHBOARD_PORT:-80}"
 
 ok()   { echo -e "  ${GREEN}✓${NC} $*"; PASS=$((PASS+1)); }
 bad()  { echo -e "  ${RED}✗${NC} $*"; FAIL=$((FAIL+1)); }
@@ -45,7 +48,7 @@ for u in multillm-gateway.service dev-dashboard.service agent-status.timer \
 done
 
 sect "VPN-only endpoints"
-for probe in "http://${WG_IP}/|landing :80" \
+for probe in "http://${WG_IP}:${DASH_PORT}/|landing :${DASH_PORT}" \
              "http://${WG_IP}:${GW_PORT}/health|gateway /health" \
              "http://${WG_IP}:${CP_PORT}/healthz|control-plane /healthz"; do
   url="${probe%%|*}"; label="${probe##*|}"

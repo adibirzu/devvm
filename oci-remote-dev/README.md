@@ -1,8 +1,18 @@
 # 🌌 OCI Agentic Development OS — Multi-Developer Remote Workspace
 
-A secure, production-grade **multi-developer remote development OS** built on Oracle Cloud Infrastructure (OCI). One command provisions a high-performance Ubuntu VM, wires up a private WireGuard mesh, gives every developer a fully isolated UNIX sandbox (terminal, web IDE, RDP desktop, OAuth/API-key vault), and runs a shared **MultiLLM gateway** so all AI-agent traffic is proxied, tracked, and observable from a single dashboard.
+A secure, production-grade **multi-developer remote development OS**. One command
+either provisions a high-performance cloud VM (OCI-optimized, also AWS/GCP/Azure)
+**or turns any Linux machine you already have into the same workspace** — a private
+WireGuard mesh, a fully isolated UNIX sandbox per developer (terminal, web IDE, RDP
+desktop, OAuth/API-key vault), and a shared **MultiLLM gateway** so all AI-agent
+traffic is proxied, tracked, and observable from a single dashboard.
 
 You drive it from your Mac with the native **cmux** agent workspace over the VPN; the heavy lifting (agents, desktops, builds) runs on the remote VM.
+
+> **One entry point:** [`./install.sh`](install.sh) — direct install, remote install
+> over SSH, cloud provisioning, and a fully non-interactive `--unattended` mode for
+> cloud-init/CI. It detects the distro and package manager (Debian/Ubuntu and
+> Oracle Linux/RHEL/Rocky/AlmaLinux/Fedora). See **[docs/INSTALL.md](docs/INSTALL.md)**.
 
 ---
 
@@ -63,26 +73,63 @@ You drive it from your Mac with the native **cmux** agent workspace over the VPN
 
 ## 🛠️ Quick Start
 
-### 1. Configure
+Pick the path that matches what you have. Full detail — flags, environment
+variables, cloud-init snippets, troubleshooting — is in
+**[docs/INSTALL.md](docs/INSTALL.md)**.
+
+### A. On a Linux machine you already have
+
+```bash
+./install.sh                 # detects the distro, installs prerequisites, configures this machine
+./install.sh --dry-run       # preview the plan; changes nothing
+./install.sh --minimal       # headless: no desktop, cloud CLIs or containers
+./install.sh --wireguard     # also run a WireGuard server here
+```
+
+Zero configuration required: with no `.env`, the account running the script
+becomes the primary developer and every other value has a default. Services bind
+`127.0.0.1` unless you add `--wireguard` or `--bind-address`, so nothing is
+exposed by accident.
+
+Configuring a *different* machine you can SSH to:
+
+```bash
+./install.sh --mode remote --host <ip> --user <login> --ssh-identity ~/.ssh/id_ed25519
+```
+
+### B. Provision a cloud VM (the OCI-optimized path)
 
 ```bash
 cp .env.example .env             # local-only; edit or let the wizard write it
 ./scripts/setup-wizard.sh        # interactive → renders .env from .env.example
+
+# Preview the full plan without creating anything (no cloud calls, no keys)
+./install.sh --mode cloud --dry-run --profile <OCI_PROFILE> --yes
+# Provision the VM and run the Ansible playbook
+./install.sh --mode cloud --profile <OCI_PROFILE> --yes
 ```
 
-Prompts for OCI profile/compartment, VM shape, WireGuard settings (including **split vs full tunnel**), developer accounts, and the MultiLLM gateway.
+The wizard prompts for OCI profile/compartment, VM shape, WireGuard settings
+(including **split vs full tunnel**), developer accounts, and the MultiLLM gateway.
+`--mode cloud` hands over to `scripts/deploy.sh` → `deploy_multicloud.py`, which
+compiles per-developer WireGuard keys, renders a ~3 KB network-only cloud-init,
+launches the instance, waits for SSH, and runs the Ansible playbook (GUI, desktops,
+code-servers, AI CLIs, shared MultiLLM gateway, dashboard). It finishes by running
+`verify-agent-os` and printing the result. Calling `./scripts/deploy.sh` directly
+still works exactly as before.
 
-### 2. Deploy
+### C. Automated / unattended
+
+Fully non-interactive, for cloud-init user-data, CI, or an image build:
 
 ```bash
-# Preview the full plan without creating anything (no cloud calls, no keys)
-./scripts/deploy.sh --dry-run --profile <OCI_PROFILE> --yes
-
-# Provision the VM and run the Ansible playbook
-./scripts/deploy.sh --profile <OCI_PROFILE> --yes
+./install.sh --unattended --admin-user dev --ssh-key /tmp/dev.pub --minimal
+# every flag also has an env var: DEVVM_UNATTENDED=1 DEVVM_ADMIN_USER=dev ./install.sh
 ```
 
-`deploy.sh` wraps `deploy_multicloud.py`, which compiles per-developer WireGuard keys, renders a ~3 KB network-only cloud-init, launches the instance, waits for SSH, and runs the Ansible playbook (GUI, desktops, code-servers, AI CLIs, shared MultiLLM gateway, dashboard). It finishes by running `verify-agent-os` and printing the result.
+It never prompts, and fails fast with the missing input named (rather than
+hanging) when something required is absent. Re-runs are idempotent, so it is safe
+from a config-management loop.
 
 > **First time / end-to-end confirmation?** Follow the ordered, safety-checked
 > [staging-deploy checklist](docs/STAGING-DEPLOY.md) (dry-run → deploy → verify → teardown).
@@ -560,6 +607,18 @@ CI runs three jobs on every push/PR: **Python lint** (black + ruff), **shell lin
 
 **Deployer prerequisites** (controller-side): `pip install -r requirements.txt` plus
 the provider CLI + Ansible (`ansible`, and `oci`/`aws`/`gcloud`/`az` for your target).
+`./install.sh` installs what is missing for you, including the two collections the
+playbook needs beyond ansible-core:
+
+```bash
+ansible-galaxy collection install -r ansible/requirements.yml   # community.general, ansible.posix
+```
+
+**Distro portability:** package names, service names, the sudo group and the
+firewall backend are per-family in [`ansible/vars/`](ansible/vars/) — `Debian.yml`
+and `RedHat.yml` — so the same playbook runs on Ubuntu/Debian and on Oracle
+Linux/RHEL/Rocky/AlmaLinux/Fedora (EPEL is enabled automatically on the latter).
+Add a family by adding a vars file with the same keys.
 
 **Post-deploy verification** (on the VM — `deploy.sh` runs it automatically and prints a
 summary; re-run anytime):

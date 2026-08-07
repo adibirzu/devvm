@@ -1,0 +1,267 @@
+---
+# Base packages, container tooling, cloud CLIs and Node.js — for both the Debian
+# and the RedHat family.
+# -----------------------------------------------------------------------------
+# Everything that needs a vendor repository is branched per family: APT keyrings +
+# sources on Debian/Ubuntu, .repo files on Oracle Linux/RHEL/Rocky/Alma/Fedora.
+# Package *names* come from vars/{{ ansible_os_family }}.yml so the task bodies
+# stay identical.
+
+- name: Packages | Install system dependencies
+  ansible.builtin.package:
+    name: "{{ os_base_packages }}"
+    state: present
+
+# pipx lives in EPEL on the RedHat family; if that repo is unavailable the OCI CLI
+# step below is skipped rather than failing the whole run.
+- name: Packages | Install pipx (best effort — gates the OCI CLI install)
+  ansible.builtin.package:
+    name: "{{ os_pipx_package }}"
+    state: present
+  register: pipx_pkg
+  failed_when: false
+
+- name: Packages | Install local container tooling
+  ansible.builtin.package:
+    name: "{{ os_container_packages }}"
+    state: present
+  when: install_podman | default(true)
+
+# --- AWS CLI v2 (vendor zip installer — identical on every distro) ------------
+- name: Packages | Check AWS CLI availability
+  ansible.builtin.command:
+    cmd: aws --version
+  register: aws_cli_check
+  changed_when: false
+  failed_when: false
+  when:
+    - install_csp_clis | default(true)
+    - install_aws_cli | default(true)
+
+- name: Packages | Install AWS CLI v2
+  when:
+    - install_csp_clis | default(true)
+    - install_aws_cli | default(true)
+    - aws_cli_check.rc | default(1) != 0
+  block:
+    - name: Packages | Download AWS CLI v2 installer
+      ansible.builtin.get_url:
+        url: "https://awscli.amazonaws.com/awscli-exe-linux-{{ ansible_architecture }}.zip"
+        dest: /tmp/awscliv2.zip
+        mode: '0644'
+
+    - name: Packages | Reset AWS CLI v2 installer directory
+      ansible.builtin.file:
+        path: /tmp/aws
+        state: absent
+
+    - name: Packages | Unpack AWS CLI v2 installer
+      ansible.builtin.unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp
+        remote_src: true
+
+    - name: Packages | Run the AWS CLI v2 installer
+      ansible.builtin.command:
+        cmd: /tmp/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+      changed_when: true
+
+# --- Vendor repositories: Debian family --------------------------------------
+- name: Packages | Debian-family vendor repositories
+  when: ansible_os_family == 'Debian'
+  block:
+    - name: Packages | Ensure the APT keyring directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Packages | Install the GitHub CLI repository key
+      ansible.builtin.get_url:
+        url: https://cli.github.com/packages/githubcli-archive-keyring.gpg
+        dest: /etc/apt/keyrings/githubcli-archive-keyring.gpg
+        mode: '0644'
+      when: install_github_cli | default(true)
+
+    - name: Packages | Add the GitHub CLI APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main"
+        state: present
+        filename: github-cli
+      when: install_github_cli | default(true)
+
+    - name: Packages | Install the Azure CLI repository key
+      ansible.builtin.get_url:
+        url: https://packages.microsoft.com/keys/microsoft.asc
+        dest: /etc/apt/keyrings/microsoft.asc
+        mode: '0644'
+      when:
+        - install_csp_clis | default(true)
+        - install_azure_cli | default(true)
+
+    - name: Packages | Add the Azure CLI APT repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.asc]
+          https://packages.microsoft.com/repos/azure-cli/
+          {{ ansible_distribution_release }} main
+        state: present
+        filename: azure-cli
+      when:
+        - install_csp_clis | default(true)
+        - install_azure_cli | default(true)
+
+    - name: Packages | Install the Google Cloud CLI repository key
+      ansible.builtin.get_url:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        dest: /etc/apt/keyrings/google-cloud.asc
+        mode: '0644'
+      when:
+        - install_csp_clis | default(true)
+        - install_gcp_cli | default(true)
+
+    - name: Packages | Add the Google Cloud CLI APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/google-cloud.asc] https://packages.cloud.google.com/apt cloud-sdk main"
+        state: present
+        filename: google-cloud-cli
+      when:
+        - install_csp_clis | default(true)
+        - install_gcp_cli | default(true)
+
+    - name: Packages | Install the NodeSource APT GPG key
+      ansible.builtin.get_url:
+        url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+        dest: /etc/apt/keyrings/nodesource.asc
+        mode: '0644'
+
+    - name: Packages | Add the NodeSource APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/nodesource.asc] https://deb.nodesource.com/node_{{ node_version }}.x nodistro main"
+        state: present
+        filename: nodesource
+
+# --- Vendor repositories: RedHat family --------------------------------------
+- name: Packages | RedHat-family vendor repositories
+  when: ansible_os_family == 'RedHat'
+  block:
+    # The vendor .repo file is what `dnf config-manager --add-repo` would fetch;
+    # taking it verbatim avoids guessing GPG settings.
+    - name: Packages | Add the GitHub CLI YUM repository
+      ansible.builtin.get_url:
+        url: https://cli.github.com/packages/rpm/gh-cli.repo
+        dest: /etc/yum.repos.d/gh-cli.repo
+        mode: '0644'
+      when: install_github_cli | default(true)
+
+    - name: Packages | Import the Microsoft package signing key
+      ansible.builtin.rpm_key:
+        key: https://packages.microsoft.com/keys/microsoft.asc
+        state: present
+      when:
+        - install_csp_clis | default(true)
+        - install_azure_cli | default(true)
+
+    - name: Packages | Add the Azure CLI YUM repository
+      ansible.builtin.yum_repository:
+        name: azure-cli
+        description: Azure CLI
+        baseurl: https://packages.microsoft.com/yumrepos/azure-cli
+        gpgcheck: true
+        gpgkey: https://packages.microsoft.com/keys/microsoft.asc
+        enabled: true
+      when:
+        - install_csp_clis | default(true)
+        - install_azure_cli | default(true)
+
+    - name: Packages | Add the Google Cloud CLI YUM repository
+      ansible.builtin.yum_repository:
+        name: google-cloud-cli
+        description: Google Cloud CLI
+        baseurl: https://packages.cloud.google.com/yum/repos/cloud-sdk-el{{ ansible_distribution_major_version }}-{{ ansible_architecture }}
+        gpgcheck: true
+        repo_gpgcheck: false
+        gpgkey: https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+        enabled: true
+      when:
+        - install_csp_clis | default(true)
+        - install_gcp_cli | default(true)
+
+    - name: Packages | Add the NodeSource YUM repository
+      ansible.builtin.yum_repository:
+        name: nodesource-nodejs
+        description: "Node.js {{ node_version }}.x"
+        baseurl: "https://rpm.nodesource.com/pub_{{ node_version }}.x/nodistro/nodejs/$basearch"
+        gpgcheck: true
+        gpgkey: https://rpm.nodesource.com/gpgkey/ns-operations-public.key
+        module_hotfixes: true
+        enabled: true
+
+    # The distro module would otherwise win over the NodeSource repo on EL8/EL9.
+    - name: Packages | Disable the built-in nodejs module stream
+      ansible.builtin.command:
+        cmd: dnf -y module disable nodejs
+      register: nodejs_module_disable
+      changed_when: "'Disabling module' in (nodejs_module_disable.stdout | default(''))"
+      failed_when: false
+
+# --- Packages that come from the repositories above --------------------------
+- name: Packages | Install the GitHub CLI
+  ansible.builtin.package:
+    name: gh
+    state: present
+  when: install_github_cli | default(true)
+
+- name: Packages | Install the Azure CLI
+  ansible.builtin.package:
+    name: azure-cli
+    state: present
+  when:
+    - install_csp_clis | default(true)
+    - install_azure_cli | default(true)
+
+- name: Packages | Install the Google Cloud CLI
+  ansible.builtin.package:
+    name: google-cloud-cli
+    state: present
+  when:
+    - install_csp_clis | default(true)
+    - install_gcp_cli | default(true)
+
+- name: Packages | Install the OCI CLI with pipx
+  ansible.builtin.command:
+    cmd: pipx install oci-cli
+    creates: /usr/local/bin/oci
+  environment:
+    PIPX_HOME: /opt/pipx
+    PIPX_BIN_DIR: /usr/local/bin
+  when:
+    - install_csp_clis | default(true)
+    - install_oci_cli | default(true)
+    - not (pipx_pkg.failed | default(false))
+
+- name: Packages | Warn when pipx is unavailable so the OCI CLI was skipped
+  ansible.builtin.debug:
+    msg: >-
+      pipx could not be installed on this host, so the OCI CLI was skipped.
+      Install it manually with: python3 -m pip install --user oci-cli
+  when:
+    - install_csp_clis | default(true)
+    - install_oci_cli | default(true)
+    - pipx_pkg.failed | default(false)
+
+- name: Packages | Install Node.js
+  ansible.builtin.package:
+    name: "{{ os_nodejs_package }}"
+    state: present
+
+- name: Packages | Install global package managers
+  community.general.npm:
+    name: "{{ item }}"
+    global: true
+    state: present
+  loop:
+    - pnpm
+    - yarn
