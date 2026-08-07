@@ -68,4 +68,6 @@ jobs:
         run: python3 scripts/security_gate.py --mode full
 
       - name: Ansible playbook syntax check
-        run: ansible-playbook --syntax-check ansible/playbook.yml
+        run: |
+          ansible-playbook --syntax-check ansible/playbook.yml
+          ansible-playbook --syntax-check ansible/apply_changes.yml

@@ -293,16 +293,6 @@
           fi
           exec /usr/bin/startxfce4
 
-    - name: Configure XFCE session for each developer
-      ansible.builtin.copy:
-        dest: "/home/{{ item.name }}/.xsession"
-        owner: "{{ item.name }}"
-        group: "{{ item.name }}"
-        mode: '0644'
-        content: |
-          xfce4-session
-      loop: "{{ developers }}"
-
     - name: Install NodeSource APT GPG key
       ansible.builtin.get_url:
         url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
@@ -337,25 +327,6 @@
         owner: root
         group: developers
         mode: '2770'
-
-    - name: Setup developer shared workspace symlinks and umask
-      block:
-        - name: Link shared workspace in homes
-          ansible.builtin.file:
-            src: /opt/shared-dev
-            dest: "/home/{{ item.name }}/shared-workspace"
-            state: link
-            owner: "{{ item.name }}"
-            group: "{{ item.name }}"
-          loop: "{{ developers }}"
-
-        - name: Configure umask 002 for developers
-          ansible.builtin.lineinfile:
-            path: "/home/{{ item.name }}/.bashrc"
-            line: "umask 002"
-            insertafter: EOF
-            state: present
-          loop: "{{ developers }}"
 
     - name: Download Cursor AppImage globally
       when: install_cursor
@@ -476,13 +447,6 @@
     - name: Configure Agent-OS (tool guardrails, MCP registry, OCI read-only MCP)
       ansible.builtin.include_tasks: agent_os_tasks.yml
       when: install_agent_os | default(true)
-
-    - name: Configure user environments
-      ansible.builtin.include_tasks: user_tasks.yml
-      loop: "{{ developers }}"
-      loop_control:
-        loop_var: dev
-      tags: [oci_skills, user_config]
 
     - name: Install AI CLI agents globally
       block:
@@ -631,14 +595,17 @@
           [Install]
           WantedBy=multi-user.target
 
-    - name: Enable and start code-server services for each user
-      ansible.builtin.systemd:
-        name: "code-server@{{ item.name }}"
-        enabled: true
-        state: restarted
-        daemon_reload: true
+    # Everything per-developer lives in developer_account_tasks.yml (which includes
+    # user_tasks.yml), so `make apply-pending` materializes a runtime-added
+    # developer through the exact same tasks. Runs here — after XRDP,
+    # /opt/shared-dev and the code-server unit template, which it depends on.
+    - name: Configure developer environments
+      ansible.builtin.include_tasks: developer_account_tasks.yml
       loop: "{{ developers }}"
-      when: install_code_server
+      loop_control:
+        loop_var: dev
+        label: "{{ dev.name }}"
+      tags: [oci_skills, user_config]
 
     - name: Install landing dashboard page
       block:
