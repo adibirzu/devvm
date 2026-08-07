@@ -252,8 +252,11 @@ def plan_changes(
     for idx, action in enumerate(actions):
         if action["status"] == "ready" and winner[str(action["name"])] != idx:
             action["status"] = "superseded"
+            winner_id = actions[winner[str(action["name"])]]["id"]
             action["reason"] = (
-                f"superseded by {actions[winner[str(action['name'])]]['id']}"
+                f"duplicate of {winner_id} later in the queue"
+                if winner_id == action["id"]
+                else f"superseded by {winner_id}"
             )
 
     # Allocate ports/IPs only for the adds that will actually run.
@@ -374,8 +377,22 @@ def needs_allocation(actions: Sequence[Dict[str, Any]]) -> bool:
 
 
 def audit_records(actions: Sequence[Dict[str, Any]], now: str) -> List[Dict[str, Any]]:
-    records = []
+    """One audit record per distinct change-id, carrying its actual outcome.
+
+    Byte-identical duplicates share an id and are the same change, and the last
+    action per id is the one that actually ran — recording only that outcome
+    keeps a retryable 'failed' from being shadowed by a terminal 'superseded'
+    loser in the next run's already-applied guard.
+    """
+    last: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
     for action in actions:
+        if action["id"] not in last:
+            order.append(action["id"])
+        last[action["id"]] = action
+    records = []
+    for cid in order:
+        action = last[cid]
         rec = {
             "ts": now,
             "id": action["id"],
