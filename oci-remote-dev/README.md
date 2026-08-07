@@ -513,6 +513,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | OCI read-only MCP server (read-only verb allowlist) | ✅ Implemented |
 | Read-only fleet control-plane API (VPN-only, `:8082`) | ✅ Implemented |
 | Control-plane mutations — admin-token auth, queued account changes, live budgets | ✅ Implemented |
+| Apply-from-queue — `make apply-pending` materializes queued changes via Ansible | ✅ Implemented |
 | Scheduled autonomous agent jobs (`agent-job`, per-user timer) | ✅ Implemented |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
@@ -611,6 +612,7 @@ Each entry is applied by its own Ansible run and then retired to a durable audit
 | `rejected` | can never succeed (bad name/key/port/IP) | removed |
 | `superseded` | a later entry for the same developer won | removed |
 | `already_applied` | change-id already in the audit log | removed |
+| `malformed` | queue line was not valid JSON (raw line audited) | removed |
 
 Re-runs are therefore idempotent and partial failures are safe: only the failures come
 back. Ports and VPN IPs are allocated one past the highest already in use, both within a
