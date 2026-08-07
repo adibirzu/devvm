@@ -379,6 +379,17 @@ class TestExecution(unittest.TestCase):
         self.assertEqual(calls[0]["apply_add"][0]["code_server_port"], 8443)
         self.assertEqual(remaining_queue(actions), [])
 
+    def test_a_failed_duplicate_stays_retryable_on_the_next_run(self) -> None:
+        runner, _ = fake_runner(3)
+        entry = add()
+        first = execute_plan(plan_changes([entry, dict(entry)]), runner)
+        self.assertEqual(remaining_queue(first), [entry])
+
+        audit = "\n".join(json.dumps(r) for r in audit_records(first, "now"))
+        (retry,) = plan_changes(remaining_queue(first), applied_ids(audit))
+
+        self.assertEqual(retry["status"], "ready")
+
     def test_rejected_and_superseded_entries_leave_the_queue(self) -> None:
         runner, calls = fake_runner(0)
         actions = execute_plan(plan_changes([add(), remove(), add(ssh_key="x")]), runner)
@@ -429,6 +440,18 @@ class TestAuditAndRoster(unittest.TestCase):
         runner, _ = fake_runner(0)
         actions = execute_plan(plan_changes([add()]), runner)
         json.dumps(audit_records(actions, "now"))
+
+    def test_audit_writes_one_record_per_change_id_with_the_real_outcome(self) -> None:
+        runner, _ = fake_runner(2)
+        actions = execute_plan(plan_changes([add(), add()]), runner)
+        (rec,) = audit_records(actions, "now")
+        self.assertEqual(rec["status"], "failed")
+
+    def test_audit_keeps_distinct_change_ids_as_separate_records(self) -> None:
+        runner, _ = fake_runner(0)
+        actions = execute_plan(plan_changes([add(), remove()]), runner)
+        recs = audit_records(actions, "now")
+        self.assertEqual([r["status"] for r in recs], ["superseded", "applied"])
 
     def test_roster_gains_applied_adds(self) -> None:
         runner, _ = fake_runner(0)
