@@ -585,8 +585,8 @@ the web service. An admin reviews the queue, then materializes it from the contr
 
 ```bash
 scp <vm>:/etc/agent-os/pending-changes.jsonl configs/     # fetch the reviewed queue
-make apply-pending ARGS="--queue configs/pending-changes.jsonl --dry-run"   # see the plan
-make apply-pending ARGS="--queue configs/pending-changes.jsonl"             # apply it
+make apply-pending ARGS="--queue configs/pending-changes.jsonl --audit configs/applied-changes.jsonl --dry-run"  # see the plan
+make apply-pending ARGS="--queue configs/pending-changes.jsonl --audit configs/applied-changes.jsonl"           # apply it
 scp configs/pending-changes.jsonl <vm>:/etc/agent-os/pending-changes.jsonl  # sync the queue back
 ```
 
@@ -602,8 +602,11 @@ code-server unit, per-user git identity, MultiLLM client, MCP config and agent h
 There is no second, hand-rolled `useradd` path. Toggles and network vars are read back
 from the deploy's own `configs/ansible_vars.json`, so nothing drifts.
 
-Each entry is applied by its own Ansible run and then retired to a durable audit log,
-`/etc/agent-os/applied-changes.jsonl` (`--audit` to relocate):
+Each entry is applied by its own Ansible run and then retired to a durable audit log
+(`--audit`; the default `/etc/agent-os/applied-changes.jsonl` is root-owned, which is
+why the controller flow above points it at `configs/`). The audit log is the
+idempotency record: keep `--audit` on the same path every run — a run against a
+different log would not recognize already-applied change-ids and would re-apply them:
 
 | status | meaning | queue |
 |---|---|---|
@@ -620,13 +623,23 @@ batch and across runs.
 
 **Removal is safe by default.** `DELETE /developers/<name>` + `make apply-pending`
 **disables** the account — login locked, shell set to `nologin`, `authorized_keys` moved
-to `authorized_keys.revoked`, sudo and `developers` group membership revoked, code-server
-stopped — and **leaves `/home/<name>` and all of its work untouched**. Deleting data is a
-separate, explicit opt-in that is never inferred from a queue entry:
+to `authorized_keys.revoked`, sudo revoked (both the per-developer drop-file and
+cloud-init's `90-cloud-init-users` grant), `developers` group membership revoked, live
+sessions terminated (`loginctl terminate-user` + `pkill`), code-server stopped — and
+**leaves `/home/<name>` and all of its work untouched**. Deleting data is a separate,
+explicit opt-in that is never inferred from a queue entry:
 
 ```bash
-make apply-pending ARGS="--purge"   # DESTRUCTIVE: also deletes the account and /home/<name>
+# DESTRUCTIVE: also deletes the account and /home/<name>
+make apply-pending ARGS="--queue configs/pending-changes.jsonl --audit configs/applied-changes.jsonl --purge"
 ```
+
+Removal does **not** revoke the developer's WireGuard peer: VPN key material is issued
+at deploy time and is outside apply-from-queue's scope. Because per-user code-server
+runs with `auth: none` and is reachable over the VPN, a removed developer who still
+holds an active tunnel can reach every developer's IDE until the peer is gone — remove
+their `[Peer]` from the server's WireGuard config (regenerate it with
+`scripts/wg_config.py` or a redeploy) and restart WireGuard to finish the revocation.
 
 Two things apply-from-queue deliberately does **not** do: it does not issue a WireGuard
 peer for a new developer (VPN key material is generated at deploy time — run
@@ -634,10 +647,11 @@ peer for a new developer (VPN key material is generated at deploy time — run
 applied entry as `DEV_N_*` in `.env` so a future from-scratch redeploy keeps the
 developer. Budgets (`POST /budgets`) still apply live, no queue involved.
 
-Running it on the VM itself instead of the controller (needs Ansible there):
+Running it on the VM itself instead of the controller (needs Ansible there; root,
+because the default queue/audit paths under `/etc/agent-os` are root-owned):
 
 ```bash
-python3 scripts/apply_pending.py --inventory 'localhost,' --connection local
+sudo python3 scripts/apply_pending.py --inventory 'localhost,' --connection local
 ```
 
 ---

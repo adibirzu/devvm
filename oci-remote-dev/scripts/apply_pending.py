@@ -242,15 +242,19 @@ def plan_changes(
                 action["reason"] = "; ".join(errs)
         actions.append(action)
 
-    # Last writer wins per developer.
-    winner: Dict[str, str] = {}
-    for action in actions:
+    # Last writer wins per developer. Winners are tracked by queue position, not
+    # change-id, so byte-identical duplicates (same content-addressed id) still
+    # collapse to a single run instead of applying twice and burning a port/IP.
+    winner: Dict[str, int] = {}
+    for idx, action in enumerate(actions):
         if action["status"] == "ready":
-            winner[str(action["name"])] = action["id"]
-    for action in actions:
-        if action["status"] == "ready" and winner[str(action["name"])] != action["id"]:
+            winner[str(action["name"])] = idx
+    for idx, action in enumerate(actions):
+        if action["status"] == "ready" and winner[str(action["name"])] != idx:
             action["status"] = "superseded"
-            action["reason"] = f"superseded by {winner[str(action['name'])]}"
+            action["reason"] = (
+                f"superseded by {actions[winner[str(action['name'])]]['id']}"
+            )
 
     # Allocate ports/IPs only for the adds that will actually run.
     for action in actions:

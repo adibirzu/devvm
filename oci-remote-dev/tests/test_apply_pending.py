@@ -252,6 +252,13 @@ class TestPlanning(unittest.TestCase):
         actions = plan_changes([good, bad])
         self.assertEqual([a["status"] for a in actions], ["ready", "rejected"])
 
+    def test_byte_identical_duplicates_collapse_to_one_ready_action(self) -> None:
+        entry = add()
+        actions = plan_changes([entry, dict(entry)])
+        self.assertEqual([a["status"] for a in actions], ["superseded", "ready"])
+        self.assertEqual(actions[1]["dev"]["code_server_port"], 8443)
+        self.assertEqual(actions[1]["dev"]["wg_ip"], "10.200.200.2")
+
 
 class TestAnsibleBoundary(unittest.TestCase):
     def test_extra_vars_for_an_add(self) -> None:
@@ -363,6 +370,14 @@ class TestExecution(unittest.TestCase):
         actions = execute_plan(plan_changes([entry], {change_id(entry)}), runner)
         self.assertEqual(calls, [])
         self.assertEqual(actions[0]["status"], "already_applied")
+
+    def test_duplicate_entries_run_ansible_once_without_burning_a_slot(self) -> None:
+        runner, calls = fake_runner(0)
+        entry = add()
+        actions = execute_plan(plan_changes([entry, dict(entry)]), runner)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["apply_add"][0]["code_server_port"], 8443)
+        self.assertEqual(remaining_queue(actions), [])
 
     def test_rejected_and_superseded_entries_leave_the_queue(self) -> None:
         runner, calls = fake_runner(0)
@@ -667,6 +682,65 @@ class TestPlaybookAssets(unittest.TestCase):
             "user_tasks.yml",
             [t.get("ansible.builtin.include_tasks") for t in tasks],
         )
+
+    @staticmethod
+    def _command_of(task):
+        mod = task.get("ansible.builtin.command")
+        if isinstance(mod, dict):
+            return str(mod.get("cmd") or "")
+        return str(mod or "")
+
+    def test_removal_terminates_sessions_of_existing_accounts_best_effort(self) -> None:
+        (play,) = self._tasks("apply_changes.yml")
+        killers = {
+            self._command_of(t).split()[0]: t
+            for t in play["tasks"]
+            if self._command_of(t).split()[:1] in (["loginctl"], ["pkill"])
+        }
+        self.assertEqual(sorted(killers), ["loginctl", "pkill"])
+        for task in killers.values():
+            # Only accounts probed as present — never raw apply_remove names —
+            # and never fatal: no live session / no process is a success.
+            self.assertEqual(task.get("loop"), "{{ removed_present }}")
+            self.assertIs(task.get("failed_when"), False)
+
+    def test_sessions_are_terminated_after_the_lock_and_before_any_purge(self) -> None:
+        (play,) = self._tasks("apply_changes.yml")
+        tasks = play["tasks"]
+        lock = next(
+            i
+            for i, t in enumerate(tasks)
+            if (t.get("ansible.builtin.user") or {}).get("password_lock") is True
+        )
+        purge = next(
+            i
+            for i, t in enumerate(tasks)
+            if (t.get("ansible.builtin.user") or {}).get("state") == "absent"
+        )
+        kills = [
+            i
+            for i, t in enumerate(tasks)
+            if self._command_of(t).split()[:1] in (["loginctl"], ["pkill"])
+        ]
+        self.assertTrue(kills)
+        self.assertTrue(all(lock < i < purge for i in kills))
+
+    def test_removal_revokes_the_cloud_init_sudo_grant_safely(self) -> None:
+        (play,) = self._tasks("apply_changes.yml")
+        (task,) = [
+            t
+            for t in play["tasks"]
+            if (t.get("ansible.builtin.lineinfile") or {}).get("path")
+            == "/etc/sudoers.d/90-cloud-init-users"
+        ]
+        mod = task["ansible.builtin.lineinfile"]
+        self.assertEqual(mod.get("state"), "absent")
+        # Anchored + escaped so it can only ever match this exact account's line,
+        # and visudo-validated so a bad edit can never break sudo on the VM.
+        self.assertTrue(mod.get("regexp", "").startswith("^"))
+        self.assertIn("regex_escape", mod.get("regexp", ""))
+        self.assertEqual(mod.get("validate"), "visudo -cf %s")
+        self.assertEqual(task.get("loop"), "{{ apply_remove }}")
 
 
 if __name__ == "__main__":
