@@ -37,12 +37,19 @@
         name: developers
         state: present
 
+    # cloud-init creates this on a fresh VM; the runtime path must too, or the
+    # user task below would fail where cloud-init never ran it.
+    - name: Ensure the docker group exists
+      ansible.builtin.group:
+        name: docker
+        state: present
+
     # Mirrors the cloud-init user block that creates developers on a fresh VM.
     - name: Create the UNIX account for each added developer
       ansible.builtin.user:
         name: "{{ dev.name }}"
         shell: /bin/bash
-        groups: [sudo, adm, video, audio, plugdev, developers]
+        groups: [sudo, docker, adm, video, audio, plugdev, developers]
         append: true
         create_home: true
         state: present

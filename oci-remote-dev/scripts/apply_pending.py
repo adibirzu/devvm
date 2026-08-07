@@ -20,7 +20,9 @@ Processed entries leave the queue and land in a durable append-only audit log
   malformed       the queue line was not JSON — dropped
 
 Re-runs are therefore idempotent (an empty queue is a no-op; Ansible itself is
-idempotent) and partial failures are safe (only failures are retried).
+idempotent) and partial failures are safe (only failures are retried). Both
+`--dry-run` (print the plan) and `--check` (ansible-playbook check mode) are
+previews: neither touches the audit log, the queue, or the roster.
 
 Removals disable an account and PRESERVE its home directory. `--purge` is the
 explicit, destructive opt-in that also deletes the account and `/home/<name>`;
@@ -42,6 +44,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -332,6 +335,40 @@ def remaining_queue(actions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [a["change"] for a in actions if a.get("status") not in TERMINAL]
 
 
+def merge_queue_lines(
+    kept: Sequence[Dict[str, Any]], current_text: str, processed_ids: set
+) -> List[str]:
+    """Serialized queue lines to write back after a run.
+
+    The control-plane may append to the queue while Ansible is running, so the
+    rewrite must not clobber the file with the pre-run snapshot: any line whose
+    change-id was not part of this batch is preserved verbatim.
+    """
+    lines = [json.dumps(c) for c in kept]
+    seen = {change_id(c) for c in kept} | set(processed_ids)
+    entries, malformed = parse_queue(current_text)
+    for entry in entries:
+        cid = change_id(entry)
+        if cid not in seen:
+            lines.append(json.dumps(entry))
+            seen.add(cid)
+    lines.extend(raw for raw in malformed if change_id({"raw": raw}) not in seen)
+    return lines
+
+
+def needs_allocation(actions: Sequence[Dict[str, Any]]) -> bool:
+    """True when a ready add left port or VPN IP for the roster to allocate."""
+    return any(
+        a["status"] == "ready"
+        and a["op"] == "add"
+        and not (
+            _valid_port(a["change"].get("code_server_port"))
+            and _valid_ipv4(a["change"].get("wg_ip"))
+        )
+        for a in actions
+    )
+
+
 def audit_records(actions: Sequence[Dict[str, Any]], now: str) -> List[Dict[str, Any]]:
     records = []
     for action in actions:
@@ -411,6 +448,32 @@ def _write_atomic(path: Path, text: str) -> None:
     tmp.replace(path)
 
 
+def _unwritable(path: Path, atomic: bool = False) -> Optional[str]:
+    """Why a later write to `path` would fail, or None if it looks writable.
+
+    `atomic` targets are replaced via a sibling temp file, so their directory
+    must be writable even when the file itself already is.
+    """
+    probe = path
+    while not probe.exists():
+        if probe.parent == probe:
+            return None
+        probe = probe.parent
+    if probe == path:
+        if path.is_dir():
+            return f"{path} is a directory"
+        if not os.access(path, os.W_OK):
+            return f"{path} is not writable"
+        if atomic and not os.access(path.parent, os.W_OK | os.X_OK):
+            return f"directory {path.parent} is not writable"
+        return None
+    if not probe.is_dir():
+        return f"{probe} is not a directory"
+    if not os.access(probe, os.W_OK | os.X_OK):
+        return f"directory {probe} is not writable"
+    return None
+
+
 def _append_jsonl(path: Path, records: Sequence[Dict[str, Any]]) -> None:
     if not records:
         return
@@ -474,7 +537,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         "Without it, removals only disable the account and keep every file.",
     )
     p.add_argument(
-        "--check", action="store_true", help="pass --check to ansible-playbook"
+        "--check",
+        action="store_true",
+        help="preview: pass --check to ansible-playbook and leave the audit "
+        "log, queue and roster untouched",
     )
     p.add_argument(
         "--dry-run",
@@ -500,7 +566,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         network,
     )
 
+    # A missing/unreadable roster would silently restart port/VPN-IP allocation
+    # at the defaults and collide with the developers the deploy already placed.
+    base_vars_gap = (
+        f"--base-vars {args.base_vars} is missing or unreadable, and a queued add "
+        f"needs a code_server_port/wg_ip allocation — allocating against an empty "
+        f"roster would restart at {DEFAULT_CODE_SERVER_PORT}/.2 and collide with "
+        "existing developers. Copy the deploy's configs/ansible_vars.json here "
+        "(scp it from the controller) or set explicit code_server_port and wg_ip "
+        "on the queue entry."
+        if needs_allocation(actions) and not base_vars
+        else None
+    )
+
     if args.dry_run:
+        if base_vars_gap:
+            print(f"WARNING: {base_vars_gap}", file=sys.stderr)
         payload = [
             {
                 "id": a["id"],
@@ -532,6 +613,36 @@ def main(argv: Optional[List[str]] = None) -> int:
         if malformed:
             print(f"{len(malformed)} malformed queue line(s) would be dropped")
         return 0
+
+    if base_vars_gap:
+        print(base_vars_gap, file=sys.stderr)
+        return 2
+
+    # Every real run appends to the audit log and rewrites the queue (and, when
+    # something lands, the roster) — prove those writes can succeed BEFORE
+    # Ansible materializes anything, so a permissions problem is a clean error
+    # instead of a crash that loses the audit trail after the fact.
+    if not args.check:
+        preflight = [
+            ("--audit", _unwritable(audit_path)),
+            ("--queue", _unwritable(queue_path, atomic=True)),
+        ]
+        if Path(args.base_vars).exists() and any(
+            a["status"] == "ready" for a in actions
+        ):
+            preflight.append(
+                ("--base-vars", _unwritable(Path(args.base_vars), atomic=True))
+            )
+        problems = [(flag, why) for flag, why in preflight if why]
+        if problems:
+            for flag, why in problems:
+                print(f"cannot write the {flag} target: {why}", file=sys.stderr)
+            print(
+                "point the flag(s) at writable paths (or re-run with enough "
+                "privilege) — nothing was applied",
+                file=sys.stderr,
+            )
+            return 2
 
     if not any(a["status"] == "ready" for a in actions):
         print(f"nothing to apply ({len(actions)} queued entr(y|ies), none ready)")
@@ -573,21 +684,42 @@ def main(argv: Optional[List[str]] = None) -> int:
         }
         for raw in malformed
     ]
-    _append_jsonl(audit_path, records)
 
     kept = remaining_queue(actions)
-    _write_atomic(queue_path, "".join(json.dumps(c) + "\n" for c in kept))
+    # --check is a preview: ansible-playbook ran in check mode, so nothing was
+    # materialized — recording the batch as applied would retire the queue for
+    # changes that never happened.
+    if not args.check:
+        _append_jsonl(audit_path, records)
 
-    # Only rewrite the deploy's roster when something actually landed, so a no-op
-    # run never churns a file the deployer owns.
-    if any(a["status"] == "applied" for a in actions) and Path(args.base_vars).exists():
-        _write_atomic(
-            Path(args.base_vars), json.dumps(merge_roster(base_vars, actions), indent=2)
-        )
+        processed = {a["id"] for a in actions} | {
+            change_id({"raw": raw}) for raw in malformed
+        }
+        lines = merge_queue_lines(kept, _read_text(queue_path), processed)
+        _write_atomic(queue_path, "".join(line + "\n" for line in lines))
+
+        # Only rewrite the deploy's roster when something actually landed, so a
+        # no-op run never churns a file the deployer owns.
+        if (
+            any(a["status"] == "applied" for a in actions)
+            and Path(args.base_vars).exists()
+        ):
+            _write_atomic(
+                Path(args.base_vars),
+                json.dumps(merge_roster(base_vars, actions), indent=2),
+            )
 
     counts = summarize(actions)
     if args.json:
-        print(json.dumps({"summary": counts, "actions": records}, indent=2))
+        payload = {"summary": counts, "actions": records}
+        if args.check:
+            payload["check"] = True
+        print(json.dumps(payload, indent=2))
+    elif args.check:
+        print(
+            f"apply-pending --check: {counts or {'queued': 0}} — preview only; "
+            "audit, queue and roster untouched"
+        )
     else:
         print(f"apply-pending: {counts or {'queued': 0}} — audit: {audit_path}")
         for a in actions:
