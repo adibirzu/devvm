@@ -1,0 +1,64 @@
+---
+# Debian / Ubuntu package names, services and conventions.
+# Loaded by playbook.yml from vars/{{ ansible_os_family }}.yml.
+
+os_family_supported: true
+os_needs_epel: false
+
+# `wireguard` pulls the kernel module glue; `wireguard-tools` gives us `wg`.
+os_base_packages:
+  # Ansible's become_user (every per-developer task) shells out to sudo, which a
+  # minimal image may not have.
+  - sudo
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - software-properties-common
+  - jq
+  - wireguard
+  - wireguard-tools
+  - tmux
+  - git
+  - vim
+  - dbus-x11
+  - ssl-cert
+  - python3-pip
+  - python3-venv
+  - gnupg
+  - lsb-release
+  - unzip
+
+os_pipx_package: pipx
+
+# What `python3 -m venv` needs. On RHEL it is part of the base python3 install.
+os_venv_packages:
+  - python3-venv
+  - python3-pip
+
+os_container_packages:
+  - podman
+  - podman-docker
+  - buildah
+  - skopeo
+  - uidmap
+  - slirp4netns
+  - fuse-overlayfs
+
+os_desktop_packages:
+  - xfce4
+  - xfce4-goodies
+  - xrdp
+
+os_resilience_packages:
+  - tmux
+  - mosh
+
+os_nodejs_package: nodejs
+
+# Debian calls the SSH daemon unit `ssh`; RHEL calls it `sshd`.
+os_sshd_service: ssh
+os_admin_sudo_group: sudo
+os_firewall_backend: ufw
+os_firewall_package: ufw
+# XRDP reads the TLS cert from /etc/ssl/private, guarded by the ssl-cert group.
+os_has_ssl_cert_group: true

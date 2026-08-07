@@ -24,10 +24,8 @@
   when: install_multillm_gateway | default(true) | bool
   block:
     - name: MultiLLM | Ensure system prerequisites
-      ansible.builtin.apt:
-        name:
-          - python3-venv
-          - python3-pip
+      ansible.builtin.package:
+        name: "{{ os_venv_packages }}"
         state: present
 
     - name: MultiLLM | Create dedicated service user

@@ -1,0 +1,104 @@
+---
+# XFCE desktop + XRDP, for both the Debian and the RedHat family.
+# Skip the whole layer with `install_desktop: false` (INSTALL_DESKTOP=false) —
+# useful for a headless install on a machine you only reach over SSH.
+
+- name: Desktop | Install the XFCE desktop and XRDP
+  ansible.builtin.package:
+    name: "{{ os_desktop_packages }}"
+    state: present
+
+- name: Desktop | Enable and start the XRDP services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - xrdp
+    - xrdp-sesman
+
+# Debian guards the XRDP TLS key with the ssl-cert group; RHEL has no such group.
+- name: Desktop | Add the xrdp user to the ssl-cert group (Debian family)
+  ansible.builtin.user:
+    name: xrdp
+    groups: ssl-cert
+    append: true
+  when: os_has_ssl_cert_group | default(false)
+
+# Without this, an XRDP login stalls on a colord authentication popup. polkit
+# <0.106 (Debian/Ubuntu) reads .pkla files; 0.106+ (EL9, Fedora) reads .rules.
+- name: Desktop | Ensure the polkit localauthority directory exists
+  ansible.builtin.file:
+    path: /etc/polkit-1/localauthority/50-local.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: ansible_os_family == 'Debian'
+
+- name: Desktop | Configure polkit for XRDP colord (pkla)
+  ansible.builtin.copy:
+    dest: /etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Allow Colord all Users]
+      Identity=unix-user:*
+      Action=org.freedesktop.color-manager.create-device;org.freedesktop.color-manager.create-profile;org.freedesktop.color-manager.delete-device;org.freedesktop.color-manager.delete-profile;org.freedesktop.color-manager.modify-device;org.freedesktop.color-manager.modify-profile
+      ResultAny=no
+      ResultInactive=no
+      ResultActive=yes
+  when: ansible_os_family == 'Debian'
+
+- name: Desktop | Ensure the polkit rules directory exists
+  ansible.builtin.file:
+    path: /etc/polkit-1/rules.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: ansible_os_family == 'RedHat'
+
+- name: Desktop | Configure polkit for XRDP colord (rules)
+  ansible.builtin.copy:
+    dest: /etc/polkit-1/rules.d/45-allow-colord.rules
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      polkit.addRule(function(action, subject) {
+        if (action.id.indexOf("org.freedesktop.color-manager.") === 0 &&
+            subject.isInGroup("developers")) {
+          return polkit.Result.YES;
+        }
+      });
+  when: ansible_os_family == 'RedHat'
+
+- name: Desktop | Set the default XRDP startwm script to XFCE
+  ansible.builtin.copy:
+    dest: /etc/xrdp/startwm.sh
+    owner: root
+    group: root
+    mode: '0755'
+    content: |
+      #!/bin/sh
+      unset DBUS_SESSION_BUS_ADDRESS
+      unset XDG_RUNTIME_DIR
+      if [ -r /etc/default/locale ]; then
+        . /etc/default/locale
+        export LANG LANGUAGE
+      fi
+      exec /usr/bin/startxfce4
+
+- name: Desktop | Configure the XFCE session for each developer
+  ansible.builtin.copy:
+    dest: "/home/{{ item.name }}/.xsession"
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: '0644'
+    content: |
+      xfce4-session
+  loop: "{{ developers }}"
+  loop_control:
+    label: "{{ item.name }}"

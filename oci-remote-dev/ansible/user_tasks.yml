@@ -14,6 +14,16 @@
     - .config
     - .config/code-server
 
+# A cloud-init VM already has ~/.ssh from the injected key; a freshly created
+# account on a direct install does not, and the per-user ssh config needs it.
+- name: Ensure the developer's ~/.ssh exists
+  ansible.builtin.file:
+    path: "/home/{{ dev.name }}/.ssh"
+    state: directory
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0700'
+
 - name: Check if Cursor binary exists
   ansible.builtin.stat:
     path: /opt/cursor/cursor.AppImage
@@ -24,6 +34,8 @@
     src: /opt/cursor/cursor.AppImage
     dest: "/home/{{ dev.name }}/Applications/cursor.AppImage"
     state: link
+    # Own the link, not the shared AppImage it points at.
+    follow: false
     owner: "{{ dev.name }}"
     group: "{{ dev.name }}"
   when: install_cursor and (cursor_bin.stat.exists | default(false))
@@ -55,7 +67,7 @@
   when: install_code_server
 
 - name: Configure git settings for user
-  ansible.builtin.git_config:
+  community.general.git_config:
     name: "{{ item.name }}"
     value: "{{ item.value }}"
     scope: global
