@@ -171,7 +171,8 @@ Goal: manage developers, services, and budgets without SSH.
 **Delivered (write side):**
 - ✅ **Mutating endpoints with admin-token auth + audit** — `POST /developers` and
   `DELETE /developers/<name>` validate and **queue** the change to
-  `/etc/agent-os/pending-changes.jsonl` (an admin materializes it via `deploy.sh`);
+  `/etc/agent-os/pending-changes.jsonl` (an admin materializes it via
+  `make apply-pending` — see the apply side below);
   account create/delete is never executed by the web service. `POST /budgets` applies
   **live** (writes `/etc/agent-os/budgets`, which `agent-status` reads next poll). All
   mutations require `X-Admin-Token` (generated to `/etc/agent-os/admin.token`, 0600) and
