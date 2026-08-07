@@ -13,10 +13,11 @@
 # identically to one created by a from-scratch deploy.
 #
 # Removal is safe by default: the account is locked (nologin, password locked,
-# supplementary groups revoked), its authorized_keys archived to
-# authorized_keys.revoked, and code-server stopped — the home directory and all
-# of its work are left untouched. Only `purge_removed: true` (`--purge`) deletes
-# data, and it is never inferred from a queue entry.
+# supplementary groups revoked, every sudo grant removed), its authorized_keys
+# archived to authorized_keys.revoked, live sessions terminated, and code-server
+# stopped — the home directory and all of its work are left untouched. Only
+# `purge_removed: true` (`--purge`) deletes data, and it is never inferred from
+# a queue entry.
 - name: Apply queued developer changes
   hosts: all
   become: true
@@ -151,6 +152,37 @@
         path: "/etc/sudoers.d/90-developer-{{ item }}"
         state: absent
       loop: "{{ apply_remove }}"
+
+    # cloud-init grants sudo a second time: a per-user NOPASSWD line in its own
+    # drop-file. The anchored regexp matches only this exact account (never a
+    # longer name it prefixes) and the task is a no-op when the file is absent.
+    - name: Revoke the removed developer's cloud-init sudo grant
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/90-cloud-init-users
+        regexp: '^{{ item | regex_escape() }}\s'
+        state: absent
+        validate: 'visudo -cf %s'
+      loop: "{{ apply_remove }}"
+
+    # The lock above only blocks NEW logins; also end what is already running so
+    # live SSH/tmux/agent processes do not outlive the revocation. Best-effort:
+    # loginctl errors without a session and pkill exits 1 with no match, and
+    # neither may fail the play.
+    - name: Terminate the removed developer's login sessions
+      ansible.builtin.command:
+        cmd: "loginctl terminate-user {{ item }}"
+      loop: "{{ removed_present }}"
+      register: apply_loginctl
+      failed_when: false
+      changed_when: apply_loginctl.rc == 0
+
+    - name: Kill any remaining processes owned by the removed developer
+      ansible.builtin.command:
+        cmd: "pkill -u {{ item }}"
+      loop: "{{ removed_present }}"
+      register: apply_pkill
+      failed_when: false
+      changed_when: apply_pkill.rc == 0
 
     - name: PURGE the removed developer's account and home directory (destructive opt-in)
       ansible.builtin.user:
