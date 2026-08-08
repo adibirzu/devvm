@@ -185,11 +185,11 @@ Goal: manage developers, services, and budgets without SSH.
   `ansible-playbook ansible/apply_changes.yml` run. That playbook includes the *same*
   `developer_account_tasks.yml` → `user_tasks.yml` the full deploy runs (which is why
   `playbook.yml` was refactored to include it too) — one provisioning path, no drift.
-  Processed entries retire to a durable audit log (`applied-changes.jsonl`) as
-  applied/failed/rejected/superseded/already_applied; only failures stay queued, so
+  Processed entries retire to a durable audit log (`applied-changes.jsonl`) with a
+  per-entry status (table in the README); only failures stay queued, so
   re-runs are idempotent and partial failures are safe. Removals **disable** an account
   (locked, nologin, keys revoked, groups dropped) and preserve `/home/<name>`; `--purge`
-  is the explicit destructive opt-in. 70 tests, all mocking the Ansible boundary.
+  is the explicit destructive opt-in. 78 tests, all mocking the Ansible boundary.
 
 **Remaining:**
 - **VPN peer on apply** — a runtime-added developer still needs WireGuard key material
