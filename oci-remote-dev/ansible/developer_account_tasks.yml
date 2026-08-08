@@ -1,0 +1,50 @@
+---
+# Per-developer wiring shared by the from-scratch deploy (playbook.yml) and the
+# runtime apply-from-queue path (apply_changes.yml). Both include THIS file, so a
+# developer added at runtime is provisioned identically to one created by a
+# full deploy — there is no second, parallel provisioning path to drift.
+#
+# Expects: dev — one entry of the `developers` list (name, code_server_port, …).
+# The substantive per-user provisioning (dirs, code-server, git identity,
+# MultiLLM client, MCP config, agent hooks) lives in user_tasks.yml, included
+# below. Prerequisites owned by the caller: the UNIX account, /opt/shared-dev,
+# XRDP, and the code-server@.service unit template.
+
+- name: Configure XFCE session for {{ dev.name }}
+  ansible.builtin.copy:
+    dest: "/home/{{ dev.name }}/.xsession"
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0644'
+    content: |
+      xfce4-session
+
+- name: Link shared workspace into {{ dev.name }}'s home
+  ansible.builtin.file:
+    src: /opt/shared-dev
+    dest: "/home/{{ dev.name }}/shared-workspace"
+    state: link
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+
+- name: Configure umask 002 for {{ dev.name }} (shared-workspace group writes)
+  ansible.builtin.lineinfile:
+    path: "/home/{{ dev.name }}/.bashrc"
+    line: "umask 002"
+    insertafter: EOF
+    state: present
+
+# Tags on a dynamic include are not inherited by nested includes, so the tags
+# playbook.yml puts on its include of THIS file must be repeated here or
+# `--tags oci_skills` / `--tags user_config` would never reach user_tasks.yml.
+- name: Configure {{ dev.name }}'s environment (dirs, code-server, git identity, MultiLLM, MCP)
+  ansible.builtin.include_tasks: user_tasks.yml
+  tags: [oci_skills, user_config]
+
+- name: Enable and start code-server for {{ dev.name }}
+  ansible.builtin.systemd:
+    name: "code-server@{{ dev.name }}"
+    enabled: true
+    state: restarted
+    daemon_reload: true
+  when: install_code_server | default(true)

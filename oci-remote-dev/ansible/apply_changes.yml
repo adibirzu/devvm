@@ -1,0 +1,200 @@
+---
+# Apply-from-queue — materialize the developer changes the control-plane API
+# queued to /etc/agent-os/pending-changes.jsonl, without redeploying from scratch.
+#
+# Driven by scripts/apply_pending.py (`make apply-pending`), which validates each
+# queue entry and invokes this playbook once per change with:
+#   apply_add     — developers[] entries to create/refresh   (default [])
+#   apply_remove  — developer names to DISABLE                (default [])
+#   purge_removed — DESTRUCTIVE opt-in: also delete the UNIX account AND its home
+#
+# Adds reuse developer_account_tasks.yml → user_tasks.yml, i.e. the very tasks
+# playbook.yml runs for a developer, so a runtime-added account is provisioned
+# identically to one created by a from-scratch deploy.
+#
+# Removal is safe by default: the account is locked (nologin, password locked,
+# supplementary groups revoked, every sudo grant removed), its authorized_keys
+# archived to authorized_keys.revoked, live sessions terminated, and code-server
+# stopped — the home directory and all of its work are left untouched. Only
+# `purge_removed: true` (`--purge`) deletes data, and it is never inferred from
+# a queue entry.
+- name: Apply queued developer changes
+  hosts: all
+  become: true
+  vars:
+    apply_add: []
+    apply_remove: []
+    purge_removed: false
+    # Mirrors of playbook.yml defaults that user_tasks.yml reads without a
+    # `| default()`. apply_pending.py overrides these from the deploy's own
+    # configs/ansible_vars.json when it exists, so toggles stay consistent.
+    install_cursor: true
+    install_code_server: true
+
+  tasks:
+    # ── Additions ────────────────────────────────────────────────────────────
+    - name: Ensure the developers group exists
+      ansible.builtin.group:
+        name: developers
+        state: present
+
+    # cloud-init creates this on a fresh VM; the runtime path must too, or the
+    # user task below would fail where cloud-init never ran it.
+    - name: Ensure the docker group exists
+      ansible.builtin.group:
+        name: docker
+        state: present
+
+    # Mirrors the cloud-init user block that creates developers on a fresh VM.
+    - name: Create the UNIX account for each added developer
+      ansible.builtin.user:
+        name: "{{ dev.name }}"
+        shell: /bin/bash
+        groups: [sudo, docker, adm, video, audio, plugdev, developers]
+        append: true
+        create_home: true
+        state: present
+      loop: "{{ apply_add }}"
+      loop_control:
+        loop_var: dev
+        label: "{{ dev.name }}"
+
+    - name: Grant the added developer passwordless sudo (matches cloud-init)
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/90-developer-{{ dev.name }}"
+        owner: root
+        group: root
+        mode: '0440'
+        content: "{{ dev.name }} ALL=(ALL) NOPASSWD:ALL\n"
+        validate: 'visudo -cf %s'
+      loop: "{{ apply_add }}"
+      loop_control:
+        loop_var: dev
+        label: "{{ dev.name }}"
+
+    - name: Ensure the added developer's .ssh directory exists
+      ansible.builtin.file:
+        path: "/home/{{ dev.name }}/.ssh"
+        state: directory
+        owner: "{{ dev.name }}"
+        group: "{{ dev.name }}"
+        mode: '0700'
+      loop: "{{ apply_add }}"
+      loop_control:
+        loop_var: dev
+        label: "{{ dev.name }}"
+
+    # blockinfile (not the authorized_key module) keeps this collection-free and
+    # makes the control-plane-issued key removable as one marked block.
+    - name: Authorize the added developer's SSH key
+      ansible.builtin.blockinfile:
+        path: "/home/{{ dev.name }}/.ssh/authorized_keys"
+        marker: "# {mark} ANSIBLE MANAGED — control-plane key for {{ dev.name }}"
+        create: true
+        owner: "{{ dev.name }}"
+        group: "{{ dev.name }}"
+        mode: '0600'
+        block: "{{ dev.ssh_key }}"
+      loop: "{{ apply_add }}"
+      loop_control:
+        loop_var: dev
+        label: "{{ dev.name }}"
+      when: (dev.ssh_key | default('')) | length > 0
+
+    - name: Provision the added developer exactly as a full deploy would
+      ansible.builtin.include_tasks: developer_account_tasks.yml
+      loop: "{{ apply_add }}"
+      loop_control:
+        loop_var: dev
+        label: "{{ dev.name }}"
+
+    # ── Removals (disable, never destroy — unless purge_removed) ─────────────
+    - name: Check which removed developers still have a UNIX account
+      ansible.builtin.command:
+        cmd: "id -u {{ item }}"
+      loop: "{{ apply_remove }}"
+      register: removed_ids
+      changed_when: false
+      failed_when: false
+
+    - name: Narrow removals to accounts that actually exist (keeps re-runs idempotent)
+      ansible.builtin.set_fact:
+        removed_present: "{{ removed_ids.results | default([]) | selectattr('rc', 'equalto', 0) | map(attribute='item') | list }}"
+
+    - name: Stop and disable code-server for each removed developer
+      ansible.builtin.systemd:
+        name: "code-server@{{ item }}"
+        enabled: false
+        state: stopped
+      loop: "{{ removed_present }}"
+      failed_when: false
+
+    - name: Archive the removed developer's authorized SSH keys (revoked, not deleted)
+      ansible.builtin.command:
+        cmd: "mv /home/{{ item }}/.ssh/authorized_keys /home/{{ item }}/.ssh/authorized_keys.revoked"
+        removes: "/home/{{ item }}/.ssh/authorized_keys"
+      loop: "{{ removed_present }}"
+
+    # Locks the login, drops sudo + the developers group (so shared-workspace
+    # access ends), and leaves /home/<name> and every file in it intact.
+    - name: Disable the removed developer's account (home directory preserved)
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: present
+        shell: /usr/sbin/nologin
+        password_lock: true
+        groups: []
+        append: false
+      loop: "{{ removed_present }}"
+
+    - name: Revoke the removed developer's passwordless sudo
+      ansible.builtin.file:
+        path: "/etc/sudoers.d/90-developer-{{ item }}"
+        state: absent
+      loop: "{{ apply_remove }}"
+
+    # cloud-init grants sudo a second time: a per-user NOPASSWD line in its own
+    # drop-file. The anchored regexp matches only this exact account (never a
+    # longer name it prefixes) and the task is a no-op when the file is absent.
+    - name: Revoke the removed developer's cloud-init sudo grant
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/90-cloud-init-users
+        regexp: '^{{ item | regex_escape() }}\s'
+        state: absent
+        validate: 'visudo -cf %s'
+      loop: "{{ apply_remove }}"
+
+    # The lock above only blocks NEW logins; also end what is already running so
+    # live SSH/tmux/agent processes do not outlive the revocation. Best-effort:
+    # loginctl errors without a session and pkill exits 1 with no match, and
+    # neither may fail the play.
+    - name: Terminate the removed developer's login sessions
+      ansible.builtin.command:
+        cmd: "loginctl terminate-user {{ item }}"
+      loop: "{{ removed_present }}"
+      register: apply_loginctl
+      failed_when: false
+      changed_when: apply_loginctl.rc == 0
+
+    - name: Kill any remaining processes owned by the removed developer
+      ansible.builtin.command:
+        cmd: "pkill -u {{ item }}"
+      loop: "{{ removed_present }}"
+      register: apply_pkill
+      failed_when: false
+      changed_when: apply_pkill.rc == 0
+
+    - name: PURGE the removed developer's account and home directory (destructive opt-in)
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: absent
+        remove: true
+        force: true
+      loop: "{{ removed_present }}"
+      when: purge_removed | bool
+
+    - name: Summarize what this apply changed
+      ansible.builtin.debug:
+        msg:
+          - "added/refreshed: {{ apply_add | map(attribute='name') | list }}"
+          - "disabled: {{ removed_present }}{{ ' (PURGED — home deleted)' if (purge_removed | bool) else ' (homes preserved)' }}"

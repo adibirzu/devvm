@@ -9,13 +9,14 @@ Read side (open over the VPN):
   GET  /pending                 queued (not-yet-applied) account changes
 
 Write side (require `X-Admin-Token`; token in /etc/agent-os/admin.token):
-  POST   /developers            validate + QUEUE an add (admin applies via deploy.sh)
+  POST   /developers            validate + QUEUE an add (admin runs `make apply-pending`)
   DELETE /developers/<name>     QUEUE a removal (never auto-deletes an account)
   POST   /budgets               set per-user daily caps — applies LIVE (config only)
 
 Account changes are queued, not executed: materializing them runs Ansible and is
-destructive, so it stays in the deliberate deploy path. Budgets are non-destructive
-and take effect on the aggregator's next poll. Every mutation is audited.
+destructive, so it stays in the deliberate admin path — `scripts/apply_pending.py`
+(`make apply-pending`) consumes this queue. Budgets are non-destructive and take
+effect on the aggregator's next poll. Every mutation is audited.
 
 Pure `dispatch()` + validators are unit-tested; sockets/files/subprocess are thin IO.
 """
@@ -41,10 +42,15 @@ _SSH_PREFIXES = ("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-")
 # ── Pure validation ──────────────────────────────────────────────────────────
 
 
+def validate_developer_name(name: Any) -> bool:
+    """Linux-safe account name — the single source of truth for queue + apply."""
+    return bool(_NAME_RE.fullmatch(str(name)))
+
+
 def validate_developer_request(body: Dict[str, Any]) -> Tuple[bool, List[str]]:
     errs: List[str] = []
     name = str(body.get("name", ""))
-    if not _NAME_RE.fullmatch(name):
+    if not validate_developer_name(name):
         errs.append("invalid name (Linux-safe: ^[a-z_][a-z0-9_-]{0,31}$)")
     key = str(body.get("ssh_key", ""))
     if not key.startswith(_SSH_PREFIXES):
@@ -64,7 +70,7 @@ def parse_budgets_request(
     if not isinstance(raw, dict) or not raw:
         return False, {}, ["body must be a non-empty object of user->usd caps"]
     for user, cap in raw.items():
-        if not _NAME_RE.fullmatch(str(user)):
+        if not validate_developer_name(user):
             errs.append(f"invalid user '{user}'")
             continue
         try:
@@ -174,7 +180,7 @@ def h_post_developers(deps, ctx) -> Tuple[int, Any]:
     return 202, {
         "status": "queued",
         "change": change,
-        "note": "Apply with: ./scripts/deploy.sh --profile <p> --yes (materializes pending changes)",
+        "note": "Apply with: make apply-pending (materializes the queue via Ansible)",
     }
 
 
@@ -182,7 +188,7 @@ def h_delete_developer(deps, ctx) -> Tuple[int, Any]:
     if not authorize(ctx, deps):
         return 401, {"error": "admin token required (X-Admin-Token)"}
     name = ctx.get("name", "")
-    if not _NAME_RE.fullmatch(name):
+    if not validate_developer_name(name):
         return 422, {"error": "invalid developer name"}
     change = {"op": "remove", "name": name}
     deps["enqueue"](change)
@@ -190,7 +196,8 @@ def h_delete_developer(deps, ctx) -> Tuple[int, Any]:
     return 202, {
         "status": "queued",
         "change": change,
-        "note": "Account removal is never automatic; an admin reviews the queue before applying.",
+        "note": "Account removal is never automatic; an admin reviews the queue, then runs "
+        "`make apply-pending` — which disables the account and preserves its home directory.",
     }
 
 
