@@ -513,6 +513,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | OCI read-only MCP server (read-only verb allowlist) | ✅ Implemented |
 | Read-only fleet control-plane API (VPN-only, `:8082`) | ✅ Implemented |
 | Control-plane mutations — admin-token auth, queued account changes, live budgets | ✅ Implemented |
+| Apply-from-queue — `make apply-pending` materializes queued changes via Ansible | ✅ Implemented |
 | Scheduled autonomous agent jobs (`agent-job`, per-user timer) | ✅ Implemented |
 | Central MCP tool registry & policy/guardrail engine | 🔭 Roadmap |
 | Control-plane REST API + fleet telemetry | 🔭 Roadmap |
@@ -546,8 +547,9 @@ All of `configs/` (WireGuard keys, deployment info, rendered vars) and `.env.loc
 pip install -r requirements-test.txt
 make check          # black + ruff + security gate + ansible syntax + pytest
 # or individually:
-make test           # pytest (159 tests: deployers, WireGuard renderer, agent-OS,
-                    #          guardrails, control-plane, tenant scoping, jobs, …)
+make test           # pytest (237 tests: deployers, WireGuard renderer, agent-OS,
+                    #          guardrails, control-plane, apply-from-queue, tenant
+                    #          scoping, jobs, …)
 make lint           # black --check + ruff
 make gate           # security_gate.py — blocks OCIDs / IPs / secrets in the tree
 ```
@@ -578,9 +580,79 @@ curl -H "X-Admin-Token: $TOKEN" -d '{"name":"carlos","ssh_key":"ssh-ed25519 AAAA
 curl http://10.200.200.1:8082/pending          # review the queue
 ```
 
-Account changes are **queued** (`/etc/agent-os/pending-changes.jsonl`), never auto-run —
-add the reviewed entries as `DEV_N_*` in `.env` and `make deploy` to materialize them.
-Budgets (`POST /budgets`) apply live.
+Account changes are **queued** (`/etc/agent-os/pending-changes.jsonl`), never auto-run by
+the web service. An admin reviews the queue, then materializes it from the controller:
+
+```bash
+scp <vm>:/etc/agent-os/pending-changes.jsonl configs/     # fetch the reviewed queue
+make apply-pending ARGS="--queue configs/pending-changes.jsonl --audit configs/applied-changes.jsonl --dry-run"  # see the plan
+make apply-pending ARGS="--queue configs/pending-changes.jsonl --audit configs/applied-changes.jsonl"           # apply it
+scp configs/pending-changes.jsonl <vm>:/etc/agent-os/pending-changes.jsonl  # sync the queue back
+```
+
+The last step matters: apply rewrites only the local copy of the queue, so until it
+is copied back the VM still holds every already-applied entry — `GET /pending` would
+keep reporting them and the file would grow forever. (Re-fetching without syncing is
+still safe: the audit log makes re-applied entries no-ops.)
+
+`scripts/apply_pending.py` validates every entry and runs `ansible/apply_changes.yml`,
+which includes the **same** `developer_account_tasks.yml` → `user_tasks.yml` a
+from-scratch deploy runs — so a runtime-added developer gets the identical home layout,
+code-server unit, per-user git identity, MultiLLM client, MCP config and agent hooks.
+There is no second, hand-rolled `useradd` path. Toggles and network vars are read back
+from the deploy's own `configs/ansible_vars.json`, so nothing drifts.
+
+Each entry is applied by its own Ansible run and then retired to a durable audit log
+(`--audit`; the default `/etc/agent-os/applied-changes.jsonl` is root-owned, which is
+why the controller flow above points it at `configs/`). The audit log is the
+idempotency record: keep `--audit` on the same path every run — a run against a
+different log would not recognize already-applied change-ids and would re-apply them:
+
+| status | meaning | queue |
+|---|---|---|
+| `applied` | Ansible succeeded | removed |
+| `failed` | Ansible exited non-zero (reason + rc audited) | **kept for retry** |
+| `rejected` | can never succeed (bad name/key/port/IP) | removed |
+| `superseded` | a later entry for the same developer won | removed |
+| `already_applied` | change-id already in the audit log | removed |
+| `malformed` | queue line was not valid JSON (raw line audited) | removed |
+
+Re-runs are therefore idempotent and partial failures are safe: only the failures come
+back. Ports and VPN IPs are allocated one past the highest already in use, both within a
+batch and across runs.
+
+**Removal is safe by default.** `DELETE /developers/<name>` + `make apply-pending`
+**disables** the account — login locked, shell set to `nologin`, `authorized_keys` moved
+to `authorized_keys.revoked`, sudo revoked (both the per-developer drop-file and
+cloud-init's `90-cloud-init-users` grant), `developers` group membership revoked, live
+sessions terminated (`loginctl terminate-user` + `pkill`), code-server stopped — and
+**leaves `/home/<name>` and all of its work untouched**. Deleting data is a separate,
+explicit opt-in that is never inferred from a queue entry:
+
+```bash
+# DESTRUCTIVE: also deletes the account and /home/<name>
+make apply-pending ARGS="--queue configs/pending-changes.jsonl --audit configs/applied-changes.jsonl --purge"
+```
+
+Removal does **not** revoke the developer's WireGuard peer: VPN key material is issued
+at deploy time and is outside apply-from-queue's scope. Because per-user code-server
+runs with `auth: none` and is reachable over the VPN, a removed developer who still
+holds an active tunnel can reach every developer's IDE until the peer is gone — remove
+their `[Peer]` from the server's WireGuard config (regenerate it with
+`scripts/wg_config.py` or a redeploy) and restart WireGuard to finish the revocation.
+
+Two things apply-from-queue deliberately does **not** do: it does not issue a WireGuard
+peer for a new developer (VPN key material is generated at deploy time — run
+`scripts/wg_config.py` or a redeploy for that), and it does not edit `.env`. Mirror each
+applied entry as `DEV_N_*` in `.env` so a future from-scratch redeploy keeps the
+developer. Budgets (`POST /budgets`) still apply live, no queue involved.
+
+Running it on the VM itself instead of the controller (needs Ansible there; root,
+because the default queue/audit paths under `/etc/agent-os` are root-owned):
+
+```bash
+sudo python3 scripts/apply_pending.py --inventory 'localhost,' --connection local
+```
 
 ---
 

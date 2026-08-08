@@ -171,16 +171,31 @@ Goal: manage developers, services, and budgets without SSH.
 **Delivered (write side):**
 - ✅ **Mutating endpoints with admin-token auth + audit** — `POST /developers` and
   `DELETE /developers/<name>` validate and **queue** the change to
-  `/etc/agent-os/pending-changes.jsonl` (an admin materializes it via `deploy.sh`);
+  `/etc/agent-os/pending-changes.jsonl` (an admin materializes it via
+  `make apply-pending` — see the apply side below);
   account create/delete is never executed by the web service. `POST /budgets` applies
   **live** (writes `/etc/agent-os/budgets`, which `agent-status` reads next poll). All
   mutations require `X-Admin-Token` (generated to `/etc/agent-os/admin.token`, 0600) and
   are written to a control-plane audit log. `GET /pending` shows the queue. 13 write/auth
   tests; verified live over HTTP.
 
+**Delivered (apply side):**
+- ✅ **Apply-from-queue** — `scripts/apply_pending.py` (`make apply-pending`) consumes
+  `pending-changes.jsonl`, validates every entry, and materializes each one with its own
+  `ansible-playbook ansible/apply_changes.yml` run. That playbook includes the *same*
+  `developer_account_tasks.yml` → `user_tasks.yml` the full deploy runs (which is why
+  `playbook.yml` was refactored to include it too) — one provisioning path, no drift.
+  Processed entries retire to a durable audit log (`applied-changes.jsonl`) with a
+  per-entry status (table in the README); only failures stay queued, so
+  re-runs are idempotent and partial failures are safe. Removals **disable** an account
+  (locked, nologin, keys revoked, groups dropped) and preserve `/home/<name>`; `--purge`
+  is the explicit destructive opt-in. 78 tests, all mocking the Ansible boundary.
+
 **Remaining:**
-- **Apply-from-queue** — teach `deploy.sh` to consume `pending-changes.jsonl` (today an
-  admin edits `.env` and redeploys; the queue is the intent record).
+- **VPN peer on apply** — a runtime-added developer still needs WireGuard key material
+  (generated at deploy time today); apply-from-queue does not issue a peer.
+- **`.env` write-back** — applied entries must still be mirrored as `DEV_N_*` so a
+  from-scratch redeploy keeps them.
 - **Self-service onboarding** — non-admin request → admin approve → materialize.
 - **Toggle:** `install_agent_os` (the API rides with it).
 
