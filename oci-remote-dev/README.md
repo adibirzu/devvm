@@ -547,7 +547,7 @@ All of `configs/` (WireGuard keys, deployment info, rendered vars) and `.env.loc
 pip install -r requirements-test.txt
 make check          # black + ruff + security gate + ansible syntax + pytest
 # or individually:
-make test           # pytest (229 tests: deployers, WireGuard renderer, agent-OS,
+make test           # pytest (237 tests: deployers, WireGuard renderer, agent-OS,
                     #          guardrails, control-plane, apply-from-queue, tenant
                     #          scoping, jobs, …)
 make lint           # black --check + ruff
