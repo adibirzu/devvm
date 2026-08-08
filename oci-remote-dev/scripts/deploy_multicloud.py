@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +22,17 @@ from typing import Any, Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts.deploy_config import (
+    ConfigError,
+    build_ansible_extra_vars,
+    build_developers,
+    build_inventory,
+    env_bool,
+    parse_env_file,
+    resolve_env_file,
+    resolve_ssh_key,
+    validate_developer,
+)
 from scripts.wg_config import render_wg_client_config
 
 # Colors for terminal output
@@ -88,62 +98,31 @@ class MultiCloudDeployer:
         self.developers: List[Dict[str, Any]] = []
 
     def _resolve_env_file(self, raw_path: str) -> Path:
-        requested = Path(raw_path).expanduser()
-        if not requested.is_absolute():
-            requested = self.project_dir / requested
-        if requested.exists() or Path(raw_path).name != ".env":
-            return requested
-
-        legacy = self.project_dir / ".env.local"
-        if legacy.exists():
+        resolved = resolve_env_file(self.project_dir, raw_path)
+        if resolved.name == ".env.local" and Path(raw_path).name == ".env":
             warn(
                 "Using legacy .env.local. Prefer copying .env.example to .env for new deployments."
             )
-            return legacy
-        return requested
+        return resolved
 
     def _parse_env_file(self, path: Path) -> Dict[str, str]:
-        data: Dict[str, str] = {}
-        if not path.exists():
-            return data
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            data[k.strip()] = v.strip().strip('"').strip("'")
-        return data
+        return parse_env_file(path)
 
     def _get_env(self, key: str, default: str = "") -> str:
         return self.env.get(key, default) or default
 
     def _env_bool(self, key: str, default: bool = False) -> bool:
-        val = self._get_env(key)
-        if val == "":
-            return default
-        return val.lower() in {"1", "true", "yes", "y", "on"}
+        return env_bool(self.env, key, default)
 
     def _resolve_ssh_key(self, val: str) -> str:
-        if not val:
-            return ""
-        if val.startswith("~") or "/" in val or "\\" in val:
-            p = Path(val.replace("~", str(Path.home())))
-            if p.exists() and p.is_file():
-                return p.read_text(encoding="utf-8").strip()
-        return val.strip()
+        return resolve_ssh_key(val)
 
     def _validate_developer(self, dev: Dict[str, Any]) -> Dict[str, Any]:
-        name = str(dev["name"])
-        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", name):
-            fail(
-                f"Invalid developer username '{name}'. Use a Linux-safe name: "
-                "lowercase letter/underscore first, then lowercase letters, digits, underscores, or hyphens."
-            )
-        if not str(dev.get("ssh_key", "")).startswith(
-            ("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-")
-        ):
-            fail(f"Developer '{name}' has no valid SSH public key configured.")
-        return dev
+        try:
+            return validate_developer(dev)
+        except ConfigError as exc:
+            fail(str(exc))
+            raise  # unreachable: fail() raises, but keeps the type checker honest
 
     def check_prerequisites(self, dry_run: bool = False) -> None:
         log(f"Checking prerequisites for cloud provider: {self.provider}...")
@@ -178,87 +157,13 @@ class MultiCloudDeployer:
 
         log("Prerequisites OK")
 
-    def _git_identity(self, name: str, prefix: str) -> Dict[str, str]:
-        """Resolve a developer's GitHub identity from env, with safe defaults.
-
-        prefix is "" for the admin (GIT_NAME / GIT_EMAIL / GITHUB_USER) or
-        "DEV_<n>_" for additional developers. Email defaults to GitHub's noreply
-        form so no personal address is required or leaked.
-        """
-        gh_user = self._get_env(f"{prefix}GITHUB_USER", name)
-        git_name = self._get_env(f"{prefix}GIT_NAME", gh_user or name)
-        git_email = self._get_env(
-            f"{prefix}GIT_EMAIL", f"{gh_user or name}@users.noreply.github.com"
-        )
-        return {
-            "git_name": git_name,
-            "git_email": git_email,
-            "github_user": gh_user or name,
-        }
-
     def build_developers_list(self) -> None:
-        ssh_pub = Path(
-            self._get_env("SSH_PUBLIC_KEY_PATH", "~/.ssh/id_rsa.pub")
-        ).expanduser()
-        dev1_name = self._get_env("ADMIN_USERNAME", "devuser")
-        dev1_ssh = self._resolve_ssh_key(str(ssh_pub))
-        dev1_wg_ip = self._get_env("WG_CLIENT_IP", "10.200.200.2")
-        dev1_port = int(self._get_env("CODE_SERVER_PORT", "8443"))
-
-        self.developers.append(
-            self._validate_developer(
-                {
-                    "name": dev1_name,
-                    "ssh_key": dev1_ssh,
-                    "wg_ip": dev1_wg_ip,
-                    "code_server_port": dev1_port,
-                    "private_key": "",
-                    "public_key": "",
-                    **self._git_identity(dev1_name, ""),
-                }
-            )
-        )
-
-        if self._env_bool("MULTI_DEV_ENABLED", False):
-            # Parse arbitrary developers dynamically: DEV_2_NAME, DEV_3_NAME, etc.
-            idx = 2
-            while True:
-                name_key = f"DEV_{idx}_NAME"
-                ssh_key = f"DEV_{idx}_SSH_KEY_PATH"
-                wg_key = f"DEV_{idx}_WG_IP"
-                port_key = f"DEV_{idx}_CODE_SERVER_PORT"
-
-                dev_name = self._get_env(name_key)
-                if not dev_name:
-                    # Look ahead up to 2 slots to allow sparse definitions or break if no more devs
-                    has_more = False
-                    for check_idx in range(idx + 1, idx + 3):
-                        if self._get_env(f"DEV_{check_idx}_NAME"):
-                            has_more = True
-                            break
-                    if not has_more:
-                        break
-                    idx += 1
-                    continue
-
-                dev_ssh_path = self._get_env(ssh_key)
-                if dev_ssh_path:
-                    self.developers.append(
-                        self._validate_developer(
-                            {
-                                "name": dev_name,
-                                "ssh_key": self._resolve_ssh_key(dev_ssh_path),
-                                "wg_ip": self._get_env(wg_key, f"10.200.200.{idx + 1}"),
-                                "code_server_port": int(
-                                    self._get_env(port_key, str(8443 + idx - 1))
-                                ),
-                                "private_key": "",
-                                "public_key": "",
-                                **self._git_identity(dev_name, f"DEV_{idx}_"),
-                            }
-                        )
-                    )
-                idx += 1
+        # Shared with install.sh and deploy_sdk.py via scripts/deploy_config.py so
+        # every deployment path derives the same accounts from the same .env.
+        try:
+            self.developers = build_developers(self.env, require_ssh_key=True)
+        except ConfigError as exc:
+            fail(str(exc))
 
     def generate_wireguard_keys(self) -> None:
         keys_dir = self.project_dir / "configs" / "wireguard"
@@ -1352,71 +1257,24 @@ class MultiCloudDeployer:
         configs_dir.mkdir(parents=True, exist_ok=True)
         inv_path = configs_dir / "hosts.ini"
 
-        inv_content = (
-            "[devserver]\n"
-            f"{self.public_ip} ansible_user={admin_user} ansible_ssh_private_key_file={ssh_priv} "
-            "ansible_ssh_extra_args='-o StrictHostKeyChecking=no'\n"
+        inv_path.write_text(
+            build_inventory(
+                connection="ssh",
+                host=self.public_ip,
+                user=admin_user,
+                ssh_key=ssh_priv,
+            ),
+            encoding="utf-8",
         )
-        inv_path.write_text(inv_content, encoding="utf-8")
         log(f"Generated Ansible inventory: {inv_path}")
 
         import json
 
-        devs_vars = []
-        for dev in self.developers:
-            devs_vars.append(
-                {
-                    "name": dev["name"],
-                    "code_server_port": dev["code_server_port"],
-                    "wg_ip": dev["wg_ip"],
-                    "git_name": dev.get("git_name", dev["name"]),
-                    "git_email": dev.get(
-                        "git_email", f"{dev['name']}@users.noreply.github.com"
-                    ),
-                    "github_user": dev.get("github_user", dev["name"]),
-                }
-            )
-
-        extra_vars = {
-            "developers": devs_vars,
-            "wg_server_ip": self._get_env("WG_SERVER_IP", "10.200.200.1"),
-            "wg_network": self._get_env("WG_NETWORK", "10.200.200.0/24"),
-            "node_version": self._get_env("NODE_VERSION", "20"),
-            "install_cursor": self._env_bool("INSTALL_CURSOR", True),
-            "install_claude_code": self._env_bool("INSTALL_CLAUDE_CODE", True),
-            "install_codex": self._env_bool("INSTALL_CODEX", True),
-            "install_gemini": self._env_bool("INSTALL_GEMINI", True),
-            "install_code_server": self._env_bool("INSTALL_CODE_SERVER", True),
-            "install_podman": self._env_bool("INSTALL_PODMAN", True),
-            "install_github_cli": self._env_bool("INSTALL_GITHUB_CLI", True),
-            "install_csp_clis": self._env_bool("INSTALL_CSP_CLIS", True),
-            "install_aws_cli": self._env_bool("INSTALL_AWS_CLI", True),
-            "install_azure_cli": self._env_bool("INSTALL_AZURE_CLI", True),
-            "install_gcp_cli": self._env_bool("INSTALL_GCP_CLI", True),
-            "install_oci_cli": self._env_bool("INSTALL_OCI_CLI", True),
-            "install_multillm_gateway": self._env_bool(
-                "INSTALL_MULTILLM_GATEWAY", True
-            ),
-            "multillm_gateway_port": int(
-                self._get_env("MULTILLM_GATEWAY_PORT", "8080")
-            ),
-            "multillm_collect_interval_min": int(
-                self._get_env("MULTILLM_COLLECT_INTERVAL_MIN", "15")
-            ),
-            "multillm_user_budgets": self._get_env("MULTILLM_USER_BUDGETS", ""),
-            "multillm_install_source": self._get_env(
-                "MULTILLM_INSTALL_SOURCE", "/opt/multillm"
-            ),
-            "multillm_source_path": self._get_env("MULTILLM_SOURCE_PATH", ""),
-            "multillm_git_url": self._get_env(
-                "MULTILLM_GIT_URL", "https://github.com/adibirzu/multillm.git"
-            ),
-            "multillm_git_version": self._get_env("MULTILLM_GIT_VERSION", "main"),
-            "install_resilience_layer": self._env_bool(
-                "INSTALL_RESILIENCE_LAYER", True
-            ),
-            "install_agent_os": self._env_bool("INSTALL_AGENT_OS", True),
-        }
+        # WireGuard is already up from cloud-init on a provisioned VM, so the
+        # playbook must not try to own it here.
+        extra_vars = build_ansible_extra_vars(
+            self.env, self.developers, {"install_wireguard": False}
+        )
 
         extra_vars_file = configs_dir / "ansible_vars.json"
         extra_vars_file.write_text(json.dumps(extra_vars), encoding="utf-8")

@@ -135,12 +135,8 @@
       [Install]
       WantedBy=multi-user.target
 
-- name: Agent-OS | Restrict the control-plane port to the WireGuard subnet
-  ansible.builtin.ufw:
-    rule: allow
-    from_ip: "{{ wg_network | default('10.200.200.0/24') }}"
-    port: "{{ control_plane_port | default(8082) | string }}"
-    proto: tcp
+# The control-plane port is restricted to the WireGuard subnet by the playbook's
+# single firewall block, so there is one source of truth per port.
 
 - name: Agent-OS | Enable + start the control-plane API
   ansible.builtin.systemd:

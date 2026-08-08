@@ -1,0 +1,12 @@
+---
+# Ansible collections the playbook needs beyond ansible-core.
+# The full `ansible` package already bundles both; install.sh installs them with
+#   ansible-galaxy collection install -r ansible/requirements.yml
+# when the controller only has ansible-core.
+collections:
+  # ufw, npm, git_config
+  - name: community.general
+    version: ">=8.0.0"
+  # authorized_key, firewalld, sysctl
+  - name: ansible.posix
+    version: ">=1.5.0"

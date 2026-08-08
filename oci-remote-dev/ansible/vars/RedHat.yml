@@ -1,0 +1,70 @@
+---
+# Oracle Linux / RHEL / Rocky / AlmaLinux / CentOS / Fedora package names,
+# services and conventions. Loaded by playbook.yml from
+# vars/{{ ansible_os_family }}.yml.
+#
+# Several packages (xrdp, the XFCE session, mosh, pipx) only exist in EPEL, which
+# playbook.yml enables in a pre_task for this family.
+
+os_family_supported: true
+# Fedora carries these packages itself; every EL rebuild needs EPEL.
+os_needs_epel: "{{ ansible_distribution != 'Fedora' }}"
+
+os_base_packages:
+  # sudo is not a given on a minimal RHEL image, and Ansible's become_user (used
+  # for every per-developer task) needs it.
+  - sudo
+  - ca-certificates
+  - curl
+  - jq
+  - wireguard-tools
+  - tmux
+  - git
+  - vim-enhanced
+  - dbus-x11
+  - python3-pip
+  - python3-libselinux
+  - gnupg2
+  - tar
+  - procps-ng
+  - unzip
+
+os_pipx_package: pipx
+
+# venv ships inside python3-libs on this family, so only pip is extra.
+os_venv_packages:
+  - python3-pip
+
+# `uidmap` is Debian-only; RHEL ships newuidmap/newgidmap inside shadow-utils,
+# which is part of every base install.
+os_container_packages:
+  - podman
+  - podman-docker
+  - buildah
+  - skopeo
+  - slirp4netns
+  - fuse-overlayfs
+
+# RHEL has no `xfce4` meta-package: install the session pieces explicitly.
+os_desktop_packages:
+  - xrdp
+  - xorgxrdp
+  - xfce4-session
+  - xfce4-panel
+  - xfce4-terminal
+  - xfdesktop
+  - xfwm4
+  - thunar
+  - xfce4-settings
+
+os_resilience_packages:
+  - tmux
+  - mosh
+
+os_nodejs_package: nodejs
+
+os_sshd_service: sshd
+os_admin_sudo_group: wheel
+os_firewall_backend: firewalld
+os_firewall_package: firewalld
+os_has_ssl_cert_group: false
