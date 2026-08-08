@@ -42,7 +42,8 @@ jobs:
 
       - name: Validate Shell Scripts
         # --severity=error fails the build only on real bugs, not style nits.
-        run: shellcheck --severity=error -e SC2002 scripts/*.sh
+        # install.sh is the documented entry point, so it is linted too.
+        run: shellcheck --severity=error -e SC2002 install.sh scripts/*.sh scripts/lib/*.sh
 
   test:
     name: Unit Tests + Security Gate
@@ -68,6 +69,12 @@ jobs:
         run: python3 scripts/security_gate.py --mode full
 
       - name: Ansible playbook syntax check
+      - name: Ansible playbook syntax check
         run: |
           ansible-playbook --syntax-check ansible/playbook.yml
           ansible-playbook --syntax-check ansible/apply_changes.yml
+
+      # --syntax-check only follows statically imported files, so assert the
+      # dynamically included task files and OS var files parse too.
+      - name: Ansible asset parse check
+        run: python3 -c "import glob,yaml; [yaml.safe_load(open(f)) for f in glob.glob('ansible/**/*.yml', recursive=True)]"

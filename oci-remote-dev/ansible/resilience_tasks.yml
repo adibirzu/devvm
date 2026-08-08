@@ -9,10 +9,8 @@
 #   * sshd + tmux are tuned for long-lived, reattachable sessions.
 
 - name: Resilience | Install tmux + mosh
-  ansible.builtin.apt:
-    name:
-      - tmux
-      - mosh
+  ansible.builtin.package:
+    name: "{{ os_resilience_packages }}"
     state: present
 
 - name: Resilience | Install agentctl (durable agent sessions)
@@ -156,6 +154,42 @@
       set -g destroy-unattached off
   loop: "{{ developers }}"
 
+- name: Resilience | Ensure the sshd drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+# EL8 (and older Debian) ship an sshd_config with no Include line, so a drop-in
+# would be silently ignored. Add it at the top, where sshd requires it to be.
+# A host with no SSH server installed at all just skips this.
+- name: Resilience | Check for an SSH server configuration
+  ansible.builtin.stat:
+    path: /etc/ssh/sshd_config
+  register: sshd_config_file
+
+- name: Resilience | Check whether sshd_config includes the drop-in directory
+  ansible.builtin.command:
+    cmd: grep -qiE '^\s*Include\s+/etc/ssh/sshd_config\.d/' /etc/ssh/sshd_config
+  register: sshd_include_check
+  changed_when: false
+  failed_when: false
+  when: sshd_config_file.stat.exists
+
+- name: Resilience | Make sshd read the drop-in directory
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    line: "Include /etc/ssh/sshd_config.d/*.conf"
+    insertbefore: BOF
+    firstmatch: true
+    state: present
+  when:
+    - sshd_config_file.stat.exists
+    - sshd_include_check.rc | default(0) != 0
+  notify: Restart sshd
+
 - name: Resilience | sshd keepalive + tolerate brief link loss
   ansible.builtin.copy:
     dest: /etc/ssh/sshd_config.d/10-resilience.conf
@@ -169,12 +203,8 @@
       TCPKeepAlive yes
   notify: Restart sshd
 
-- name: Resilience | Open mosh UDP range over the WireGuard subnet only
-  ansible.builtin.ufw:
-    rule: allow
-    from_ip: "{{ wg_network | default('10.200.200.0/24') }}"
-    port: "60000:61000"
-    proto: udp
+# The mosh UDP range (60000-61000, WireGuard subnet only) is opened by the
+# playbook's single firewall block, so there is one source of truth per port.
 
 # ── Live multi-agent status board ────────────────────────────────────────────
 - name: Resilience | Install agent-status aggregator

@@ -1,0 +1,89 @@
+---
+# Distro-neutral firewall rules.
+# -----------------------------------------------------------------------------
+# The caller sets `firewall_rules` to a list of:
+#     { port: "8080", proto: "tcp", from_ip: "10.200.200.0/24" }   # from_ip optional
+# and includes this file. Debian family goes through ufw, RedHat family through
+# firewalld; anything else (or a host with the firewall absent) is skipped with a
+# warning instead of failing the run, so a container or a machine whose firewall
+# is managed elsewhere still installs cleanly.
+#
+# Set `configure_firewall: false` to skip the layer entirely.
+
+- name: Firewall | Detect the active backend
+  when: configure_firewall | default(true) | bool
+  block:
+    - name: Firewall | Check for ufw
+      ansible.builtin.stat:
+        path: /usr/sbin/ufw
+      register: firewall_ufw_bin
+
+    - name: Firewall | Check for firewall-cmd
+      ansible.builtin.stat:
+        path: /usr/bin/firewall-cmd
+      register: firewall_firewalld_bin
+
+    - name: Firewall | Note when no supported firewall is installed
+      ansible.builtin.debug:
+        msg: >-
+          No supported firewall found ({{ os_firewall_backend | default('unknown') }}
+          expected). Skipping firewall rules — open
+          {{ firewall_rules | map(attribute='port') | join(', ') }} yourself if this
+          host is internet-facing.
+      when:
+        - not firewall_ufw_bin.stat.exists
+        - not firewall_firewalld_bin.stat.exists
+
+    - name: Firewall | Allow rules (ufw)
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port | string }}"
+        proto: "{{ item.proto }}"
+        from_ip: "{{ item.from_ip | default(omit) }}"
+      loop: "{{ firewall_rules }}"
+      loop_control:
+        label: "{{ item.port }}/{{ item.proto }}{{ ' from ' ~ item.from_ip if item.from_ip is defined else '' }}"
+      when:
+        - os_firewall_backend | default('ufw') == 'ufw'
+        - firewall_ufw_bin.stat.exists
+
+    - name: Firewall | Ensure firewalld is running (RedHat family)
+      ansible.builtin.systemd:
+        name: firewalld
+        enabled: true
+        state: started
+      when:
+        - os_firewall_backend | default('ufw') == 'firewalld'
+        - firewall_firewalld_bin.stat.exists
+
+    # firewalld has no "port from source" primitive, so unrestricted rules use
+    # `port` and source-restricted ones become rich rules. Port ranges are written
+    # 60000-61000 here, versus ufw's 60000:61000.
+    - name: Firewall | Allow rules (firewalld)
+      ansible.posix.firewalld:
+        port: "{{ (item.port | string) | replace(':', '-') }}/{{ item.proto }}"
+        permanent: true
+        immediate: true
+        state: enabled
+      loop: "{{ firewall_rules | rejectattr('from_ip', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.port }}/{{ item.proto }}"
+      when:
+        - os_firewall_backend | default('ufw') == 'firewalld'
+        - firewall_firewalld_bin.stat.exists
+
+    - name: Firewall | Source-restricted allow rules (firewalld rich rules)
+      ansible.posix.firewalld:
+        rich_rule: >-
+          rule family="ipv4" source address="{{ item.from_ip }}"
+          port port="{{ (item.port | string) | replace(':', '-') }}"
+          protocol="{{ item.proto }}" accept
+        permanent: true
+        immediate: true
+        state: enabled
+      loop: "{{ firewall_rules | selectattr('from_ip', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.port }}/{{ item.proto }} from {{ item.from_ip }}"
+      when:
+        - os_firewall_backend | default('ufw') == 'firewalld'
+        - firewall_firewalld_bin.stat.exists

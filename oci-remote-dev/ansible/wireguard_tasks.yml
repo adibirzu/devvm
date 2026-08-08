@@ -1,0 +1,159 @@
+---
+# WireGuard server setup for a DIRECT install.
+# -----------------------------------------------------------------------------
+# On a cloud-provisioned VM, cloud-init already brings wg0 up with the keys the
+# deployer generated, so the cloud path passes `install_wireguard: false` and
+# never runs this file. When you install straight onto an existing Linux machine
+# there is no cloud-init, so this generates the server keypair, a keypair per
+# developer, /etc/wireguard/wg0.conf and one ready-to-import client config each.
+#
+# Every key is generated with `creates:`, so re-running never rotates keys and
+# never invalidates a client config already imported on someone's laptop.
+
+- name: WireGuard | Install the WireGuard tools
+  ansible.builtin.package:
+    name: wireguard-tools
+    state: present
+
+- name: WireGuard | Ensure the configuration directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - /etc/wireguard
+    - /etc/wireguard/clients
+
+- name: WireGuard | Generate the server private key (once)
+  ansible.builtin.shell:
+    cmd: umask 077 && wg genkey > /etc/wireguard/server_private.key
+    creates: /etc/wireguard/server_private.key
+
+- name: WireGuard | Derive the server public key (once)
+  ansible.builtin.shell:
+    cmd: umask 077 && wg pubkey < /etc/wireguard/server_private.key > /etc/wireguard/server_public.key
+    creates: /etc/wireguard/server_public.key
+
+- name: WireGuard | Generate each developer's private key (once)
+  ansible.builtin.shell:
+    cmd: >-
+      mkdir -p /etc/wireguard/clients/{{ item.name }} && umask 077 &&
+      wg genkey > /etc/wireguard/clients/{{ item.name }}/private.key
+    creates: "/etc/wireguard/clients/{{ item.name }}/private.key"
+  loop: "{{ developers }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: WireGuard | Derive each developer's public key (once)
+  ansible.builtin.shell:
+    cmd: >-
+      umask 077 &&
+      wg pubkey < /etc/wireguard/clients/{{ item.name }}/private.key
+      > /etc/wireguard/clients/{{ item.name }}/public.key
+    creates: "/etc/wireguard/clients/{{ item.name }}/public.key"
+  loop: "{{ developers }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: WireGuard | Read the server keys
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - /etc/wireguard/server_private.key
+    - /etc/wireguard/server_public.key
+  register: wg_server_keys
+
+- name: WireGuard | Read each developer's keys
+  ansible.builtin.slurp:
+    src: "/etc/wireguard/clients/{{ item.0.name }}/{{ item.1 }}.key"
+  loop: "{{ developers | product(['private', 'public']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }}/{{ item.1 }}"
+  register: wg_client_keys
+
+- name: WireGuard | Build a name -> keypair map
+  ansible.builtin.set_fact:
+    wg_keys: >-
+      {{ wg_keys | default({}) | combine({
+        item.item.0.name: (wg_keys | default({})).get(item.item.0.name, {}) |
+          combine({item.item.1: (item.content | b64decode | trim)})
+      }) }}
+  loop: "{{ wg_client_keys.results }}"
+  loop_control:
+    label: "{{ item.item.0.name }}/{{ item.item.1 }}"
+
+- name: WireGuard | Write the server configuration
+  ansible.builtin.copy:
+    dest: /etc/wireguard/wg0.conf
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      # Managed by Ansible (wireguard_tasks.yml) — edits will be overwritten.
+      [Interface]
+      PrivateKey = {{ wg_server_keys.results[0].content | b64decode | trim }}
+      Address = {{ wg_server_ip }}/{{ wg_network | regex_replace('^.*/', '') }}
+      ListenPort = {{ wg_port | default(51820) }}
+      PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o {{ wg_egress_interface }} -j MASQUERADE
+      PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o {{ wg_egress_interface }} -j MASQUERADE
+      {% for dev in developers %}
+
+      [Peer]
+      # Developer: {{ dev.name }}
+      PublicKey = {{ wg_keys[dev.name].public }}
+      AllowedIPs = {{ dev.wg_ip }}/32
+      {% endfor %}
+  vars:
+    wg_egress_interface: "{{ wg_interface | default(ansible_default_ipv4.interface | default('eth0')) }}"
+  notify: Restart wireguard
+
+- name: WireGuard | Enable IPv4 forwarding for the tunnel
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    sysctl_set: true
+    state: present
+    reload: true
+
+# Split tunnel by default (only wg_network is routed), and deliberately no DNS
+# line: on macOS a DNS entry in a split-tunnel config is installed system-wide
+# and blackholes every lookup. See README → WireGuard VPN & Mac Routing.
+- name: WireGuard | Write a ready-to-import client config per developer
+  ansible.builtin.copy:
+    dest: "/etc/wireguard/clients/{{ item.name }}/client_{{ item.name }}.conf"
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      [Interface]
+      PrivateKey = {{ wg_keys[item.name].private }}
+      Address = {{ item.wg_ip }}/{{ wg_network | regex_replace('^.*/', '') }}
+      {% if wg_full_tunnel | default(false) and (wg_dns | default('')) | length > 0 %}
+      DNS = {{ wg_dns }}
+      {% endif %}
+
+      [Peer]
+      PublicKey = {{ wg_server_keys.results[1].content | b64decode | trim }}
+      Endpoint = {{ wg_endpoint_host | default(ansible_default_ipv4.address | default(ansible_host)) }}:{{ wg_port | default(51820) }}
+      AllowedIPs = {{ '0.0.0.0/0, ::/0' if (wg_full_tunnel | default(false)) else wg_network }}
+      PersistentKeepalive = 25
+  loop: "{{ developers }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: WireGuard | Enable and start wg-quick@wg0
+  ansible.builtin.systemd:
+    name: wg-quick@wg0
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: WireGuard | Where to find the client configs
+  ansible.builtin.debug:
+    msg: >-
+      WireGuard is up on {{ wg_server_ip }}. Client configs (one per developer):
+      /etc/wireguard/clients/<user>/client_<user>.conf — copy one to your laptop
+      and import it. Override the endpoint with WG_ENDPOINT_HOST when this host is
+      reached through a different address.
