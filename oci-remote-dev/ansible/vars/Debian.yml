@@ -55,6 +55,19 @@ os_resilience_packages:
 
 os_nodejs_package: nodejs
 
+os_dev_packages:
+  - rustup
+  - ripgrep
+  - fd-find
+  - bat
+  - fzf
+  - direnv
+  - shellcheck
+  - just
+  - yq
+  - postgresql-client
+  - sqlite3
+
 # Debian calls the SSH daemon unit `ssh`; RHEL calls it `sshd`.
 os_sshd_service: ssh
 os_admin_sudo_group: sudo
