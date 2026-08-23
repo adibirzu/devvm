@@ -63,6 +63,19 @@ os_resilience_packages:
 
 os_nodejs_package: nodejs
 
+os_dev_packages:
+  - rustup
+  - ripgrep
+  - fd-find
+  - bat
+  - fzf
+  - direnv
+  - ShellCheck
+  - just
+  - yq
+  - postgresql
+  - sqlite
+
 os_sshd_service: sshd
 os_admin_sudo_group: wheel
 os_firewall_backend: firewalld

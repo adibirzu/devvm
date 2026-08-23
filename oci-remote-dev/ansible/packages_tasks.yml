@@ -27,6 +27,63 @@
     state: present
   when: install_podman | default(true)
 
+- name: Packages | Install ARM64 developer utilities
+  ansible.builtin.package:
+    name: "{{ os_dev_packages }}"
+    state: present
+  when: install_dev_tools | default(true)
+
+- name: Packages | ARM64 developer-tool repositories (Debian family)
+  when:
+    - ansible_os_family == 'Debian'
+    - install_dev_tools | default(true)
+  block:
+    - name: Packages | Install Kubernetes repository key
+      ansible.builtin.get_url:
+        url: https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key
+        dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
+        mode: '0644'
+    - name: Packages | Add Kubernetes ARM64 repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc arch=arm64] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /"
+        state: present
+        filename: kubernetes
+    - name: Packages | Install Kubernetes CLI
+      ansible.builtin.apt:
+        name: kubectl
+        state: present
+        update_cache: true
+    - name: Packages | Install Helm repository key
+      ansible.builtin.get_url:
+        url: https://baltocdn.com/helm/signing.asc
+        dest: /etc/apt/keyrings/helm.asc
+        mode: '0644'
+    - name: Packages | Add Helm ARM64 repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/helm.asc arch=arm64] https://baltocdn.com/helm/stable/debian/ all main"
+        state: present
+        filename: helm-stable
+    - name: Packages | Install Helm
+      ansible.builtin.apt:
+        name: helm
+        state: present
+        update_cache: true
+    - name: Packages | Install HashiCorp repository key
+      ansible.builtin.get_url:
+        url: https://apt.releases.hashicorp.com/gpg
+        dest: /etc/apt/keyrings/hashicorp.asc
+        mode: '0644'
+    - name: Packages | Add HashiCorp ARM64 repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/hashicorp.asc arch=arm64] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
+        state: present
+        filename: hashicorp
+    - name: Packages | Install Terraform
+      ansible.builtin.apt:
+        name: terraform
+        state: present
+        update_cache: true
+
 # --- AWS CLI v2 (vendor zip installer — identical on every distro) ------------
 - name: Packages | Check AWS CLI availability
   ansible.builtin.command:
