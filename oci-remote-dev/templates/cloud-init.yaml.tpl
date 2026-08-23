@@ -40,6 +40,15 @@ packages:
   - dbus-x11
   - ufw
   - sudo
+  - ripgrep
+  - fd-find
+  - bat
+  - fzf
+  - direnv
+  - shellcheck
+  - just
+  - yq
+  - sqlite3
 
 write_files:
   # Detect primary network interface script
