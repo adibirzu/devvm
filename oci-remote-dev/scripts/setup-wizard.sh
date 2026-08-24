@@ -318,7 +318,7 @@ main() {
     prompt_yn INSTALL_CURSOR_AGENT "Install Cursor agent CLI (terminal agent)?" "n"
     prompt_yn INSTALL_OLLAMA "Install Ollama local-LLM serving + client wiring?" "n"
     if [[ "$INSTALL_OLLAMA" == "true" ]]; then
-        prompt OLLAMA_MODELS "Ollama models to pull after install (comma-separated)" ""
+        prompt OLLAMA_MODELS "Ollama models to pull after install (empty = default model)" ""
         prompt OLLAMA_DEFAULT_MODEL "Default local model for the claude-local alias" "qwen3-coder"
     else
         OLLAMA_MODELS=""

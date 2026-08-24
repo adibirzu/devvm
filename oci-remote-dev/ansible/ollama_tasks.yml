@@ -68,15 +68,28 @@
 
 - name: Ollama | Parse the requested model list
   ansible.builtin.set_fact:
-    ollama_model_list: "{{ (ollama_models | default('')).split(',') | map('trim') | reject('equalto', '') | list }}"
+    ollama_model_list: "{{ (ollama_models | default('')).split(',') | map('trim') | reject('equalto', '') | list or [ollama_default_model] }}"
 
-- name: Ollama | Pull the requested models (skipped when already present)
-  ansible.builtin.shell: |
-    ollama show '{{ item }}' >/dev/null 2>&1 && echo present || { ollama pull '{{ item }}' && echo pulled; }
+- name: Ollama | Check whether the requested models are present
+  ansible.builtin.command:
+    argv: [ollama, show, "{{ item }}"]
   environment:
     OLLAMA_HOST: "{{ ollama_effective_bind }}:{{ ollama_port }}"
-  register: ollama_pull
-  changed_when: "'pulled' in (ollama_pull.stdout | default(''))"
+  register: ollama_model_check
+  changed_when: false
+  failed_when: false
   loop: "{{ ollama_model_list }}"
   loop_control:
     label: "{{ item }}"
+
+- name: Ollama | Pull missing models
+  ansible.builtin.command:
+    argv: [ollama, pull, "{{ item.item }}"]
+  environment:
+    OLLAMA_HOST: "{{ ollama_effective_bind }}:{{ ollama_port }}"
+  register: ollama_pull
+  changed_when: ollama_pull.rc == 0
+  loop: "{{ ollama_model_check.results }}"
+  when: item.rc != 0
+  loop_control:
+    label: "{{ item.item }}"
