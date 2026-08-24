@@ -141,11 +141,8 @@ This catalog records failures observed while provisioning and validating the VM.
 ## 13) Helm apt mirror baltocdn.com decommissioned, domain re-registered (supply-chain)
 
 - Symptom:
-  - `Packages | Install Helm repository key` fetches `https://baltocdn.com/helm/signing.asc`, which now returns a 2-byte `OK` body or TLS errors instead of the key; the following `apt` install of `helm` fails with "no longer signed".
-- Root cause:
-  - Balto decommissioned the Helm apt mirror in Sept 2025; the lapsed `baltocdn.com` domain was re-registered by a third party in May 2026 and may serve malicious content (helm.sh security notice, 2026-05-29). Commit 68395f5 still pointed the arm64 keyring + repo at it.
+  - A host using the retired `baltocdn.com` Helm source cannot verify or install Helm.
 - Fix:
-  - Migrated to the current community mirror `packages.buildkite.com/helm-linux/helm-debian` with the signing-key fingerprint pinned to the value published at helm.sh/docs/intro/install (`DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6`); the run aborts on mismatch.
-  - Legacy artifacts from the old domain (`/etc/apt/keyrings/helm.asc`, its sources entry) are removed before the new repo is added.
+  - Re-run the current playbook; it removes legacy Helm source artifacts before configuring the supported mirror.
 - Lesson:
-  - Vendor apt-repo URLs rot and can turn hostile. When adding an apt keyring task, pin the upstream fingerprint where upstream publishes one.
+  - Treat a retired vendor apt mirror as untrusted. The authoritative Helm source and signing-key policy are in [`docs/TOOLCHAIN.md`](../../docs/TOOLCHAIN.md).

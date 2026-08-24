@@ -8,8 +8,9 @@ x86_64-only is skipped with an explicit note instead of failing at provision
 time.
 
 All new toggles default to OFF (`.env.example`, playbook vars,
-`deploy_config.py`): an existing deployment never silently grows new global
-installs on its next run. Opt in per tool with the matching `INSTALL_*` flag.
+`deploy_config.py`, and the SDK deployer): an existing deployment never silently
+grows new global installs on its next run. Opt in per tool with the matching
+`INSTALL_*` flag.
 
 ## Global npm CLIs (`ansible/playbook.yml`)
 
@@ -69,10 +70,11 @@ fetched and inspected for arch handling on 2026-08-24.
   ([helm.sh security notice, 2026-05-29](https://helm.sh/blog/security-notice-baltocdn/)).
   The playbook installs Helm from the current community mirror
   (`packages.buildkite.com/helm-linux/helm-debian`, which serves `binary-arm64`)
-  and pins the signing-key fingerprint to the value published at
-  helm.sh/docs/intro/install, aborting the run on any mismatch. Legacy keyring +
-  sources files from the old domain are removed first. See also
-  `KB/oci-provisioning/ISSUE-CATALOG.md` entry 13.
+  and accepts only the two fingerprints in its published signing-key chain
+  (`AECF01AC58ECB0517F4445544B196BE9C4313D06` and
+  `DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6`), aborting the run on any
+  mismatch. Legacy keyring + sources files from the old domain are removed
+  first.
 
 ## Assertion status
 
