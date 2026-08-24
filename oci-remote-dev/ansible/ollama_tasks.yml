@@ -58,13 +58,17 @@
     content: |
       [Service]
       Environment=OLLAMA_HOST={{ ollama_effective_bind }}:{{ ollama_port }}
+  notify: Restart Ollama
 
 - name: Ollama | Enable and start the server
   ansible.builtin.systemd:
     name: ollama
     enabled: true
-    state: restarted
+    state: started
     daemon_reload: true
+
+- name: Ollama | Apply pending service restart
+  ansible.builtin.meta: flush_handlers
 
 - name: Ollama | Parse the requested model list
   ansible.builtin.set_fact:
