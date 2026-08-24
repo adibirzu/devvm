@@ -19,6 +19,24 @@
     install_claude_code: true
     install_codex: true
     install_gemini: true
+    # Additional agent CLIs. Default OFF so an existing deployment does not
+    # silently grow new global installs on its next run — opt in per tool via
+    # the matching INSTALL_* env flag (see .env.example and docs/TOOLCHAIN.md).
+    install_opencode: false
+    install_pi: false            # needs Node >= 22 (set NODE_VERSION=22)
+    install_grok: false
+    install_cline: false
+    install_copilot_cli: false   # needs Node >= 22 (set NODE_VERSION=22)
+    install_cursor_agent: false
+    # Local LLM serving (Ollama) + wiring for the coding clients.
+    install_ollama: false
+    ollama_bind_address: ""      # empty = follow wg_server_ip (loopback without --wireguard)
+    ollama_port: 11434
+    ollama_models: ""            # comma-separated models to pull after install, e.g. qwen3-coder,gpt-oss:20b
+    ollama_default_model: "qwen3-coder"
+    # Same binding rule as every other service here: follow the WireGuard/tunnel
+    # address when there is one, loopback otherwise (--bind-address wins).
+    ollama_effective_bind: "{{ ollama_bind_address if (ollama_bind_address | default('')) | length > 0 else wg_server_ip }}"
     install_code_server: true
     install_podman: true
     install_dev_tools: true
@@ -125,6 +143,9 @@
         user: "{{ item.name }}"
         key: "{{ item.ssh_key }}"
         state: present
+      loop: "{{ developers }}"
+      loop_control:
+        label: "{{ item.name }}"
 
     - name: Install local container tooling
       ansible.builtin.apt:
@@ -393,8 +414,11 @@
           loop: "{{ developers }}"
           loop_control:
             label: "{{ item.name }}"
-    - name: Download Cursor AppImage globally
-      when: install_cursor
+    - name: Download Cursor AppImage globally (x86_64 only)
+      # Upstream publishes the desktop AppImage for x64 only; on arm64 this is
+      # skipped with a note instead of leaving a broken/wrong-arch download
+      # behind (the cursor-agent CLI is a separate, arch-aware install).
+      when: install_cursor and ansible_architecture == 'x86_64'
       block:
         - name: Create Cursor directory
           ansible.builtin.file:
@@ -408,6 +432,14 @@
             dest: /opt/cursor/cursor.AppImage
             mode: '0755'
           ignore_errors: true
+
+    - name: Note Cursor IDE skipped (no arm64 AppImage published upstream)
+      ansible.builtin.debug:
+        msg: >-
+          install_cursor is enabled but the Cursor IDE AppImage is x86_64-only;
+          it was skipped on {{ ansible_architecture }}. The cursor-agent CLI
+          supports arm64 and can be installed instead (INSTALL_CURSOR_AGENT=true).
+      when: install_cursor and ansible_architecture != 'x86_64'
 
     - name: Provision the MultiLLM gateway source
       when: install_multillm_gateway | default(true)
@@ -545,6 +577,80 @@
             state: present
           when: install_gemini
           ignore_errors: true
+
+        # The CLIs below ship platform packages for linux-x64 AND linux-arm64
+        # (or are pure Node), so the same npm install works on both. See
+        # docs/TOOLCHAIN.md for the per-tool architecture verification notes.
+        #
+        # pi and the Copilot CLI need Node >= 22 at RUNTIME. The gate checks the
+        # actually-installed Node major, not NODE_VERSION: a re-run does not
+        # upgrade an existing Node install, so the declared value can lie.
+        - name: Detect the installed Node.js major version
+          ansible.builtin.command:
+            cmd: node --version
+          register: node_runtime_version
+          changed_when: false
+          failed_when: false
+
+        - name: Compute the installed Node.js major version
+          ansible.builtin.set_fact:
+            node_major: >-
+              {{ node_runtime_version.stdout | default('v0', true)
+                 | regex_replace('^v(\d+).*$', '\1') | int }}
+
+        - name: Install OpenCode CLI
+          community.general.npm:
+            name: "opencode-ai"
+            global: true
+            state: present
+          when: install_opencode | default(false)
+          ignore_errors: true
+
+        - name: Install pi coding agent CLI (needs Node >= 22)
+          community.general.npm:
+            name: "@earendil-works/pi-coding-agent"
+            global: true
+            state: present
+          when:
+            - install_pi | default(false)
+            - node_major | int >= 22
+          ignore_errors: true
+
+        - name: Install Cline CLI
+          community.general.npm:
+            name: "cline"
+            global: true
+            state: present
+          when: install_cline | default(false)
+          ignore_errors: true
+
+        - name: Install GitHub Copilot CLI (needs Node >= 22)
+          community.general.npm:
+            name: "@github/copilot"
+            global: true
+            state: present
+          when:
+            - install_copilot_cli | default(false)
+            - node_major | int >= 22
+          ignore_errors: true
+
+    - name: Note Node-22-only agent CLIs skipped
+      # pi and the Copilot CLI require a newer Node than the one installed; say
+      # so instead of failing or silently not installing them.
+      ansible.builtin.debug:
+        msg: >-
+          Node.js v{{ node_major | default('?') }} is installed but pi
+          (@earendil-works/pi-coding-agent) and the GitHub Copilot CLI require
+          Node >= 22. Set NODE_VERSION=22 and upgrade Node (a fresh deploy picks
+          it up automatically; an existing one needs `apt install nodejs` after
+          the repo switch), then re-run to install the ones you enabled.
+      when:
+        - (node_major | default(0)) | int < 22
+        - (install_pi | default(false)) or (install_copilot_cli | default(false))
+
+    - name: Configure local LLM serving (Ollama + client wiring)
+      ansible.builtin.include_tasks: ollama_tasks.yml
+      when: install_ollama | default(false)
 
     - name: Install pair-claude shared session helper
       ansible.builtin.copy:
@@ -876,6 +982,9 @@
             + ([{'port': multillm_gateway_port | default(8080), 'proto': 'tcp',
                  'from_ip': wg_network | default('10.200.200.0/24')}]
                if (install_multillm_gateway | default(true)) else [])
+            + ([{'port': ollama_port | default(11434), 'proto': 'tcp',
+                 'from_ip': wg_network | default('10.200.200.0/24')}]
+               if (install_ollama | default(false)) else [])
             + ([{'port': control_plane_port | default(8082), 'proto': 'tcp',
                  'from_ip': wg_network | default('10.200.200.0/24')}]
                if (install_agent_os | default(true)) else [])

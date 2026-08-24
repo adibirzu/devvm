@@ -128,10 +128,89 @@
   become_user: "{{ dev.name }}"
   ignore_errors: true
 
+# --- per-developer agent CLIs that upstream ships as vendor installers -------
+# These scripts all detect OS and architecture themselves (x86_64 and arm64
+# Linux are supported by each — see docs/TOOLCHAIN.md) and install into the
+# developer's own home, so they must run with become_user. Global npm CLIs
+# (claude/codex/gemini/opencode/cline/...) are instead installed once in
+# playbook.yml.
+
+- name: Check if the Antigravity CLI is already installed
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.local/bin/agy"
+  register: agy_bin
+  when: install_antigravity | default(true)
+
+- name: Install the Antigravity CLI (agy) for developer
+  ansible.builtin.shell: |
+    curl -fsSL https://antigravity.google/cli/install.sh | bash
+  args:
+    creates: "/home/{{ dev.name }}/.local/bin/agy"
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+  when:
+    - install_antigravity | default(true)
+    - not (agy_bin.stat.exists | default(false))
+
+- name: Check if the Cursor agent CLI is already installed
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.local/bin/cursor-agent"
+  register: cursor_agent_bin
+  when: install_cursor_agent | default(false)
+
+- name: Install the Cursor agent CLI for developer
+  ansible.builtin.shell: |
+    curl https://cursor.com/install -fsS | bash
+  args:
+    creates: "/home/{{ dev.name }}/.local/bin/cursor-agent"
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+  when:
+    - install_cursor_agent | default(false)
+    - not (cursor_agent_bin.stat.exists | default(false))
+
+- name: Check if the Grok CLI is already installed
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.grok/bin/grok"
+  register: grok_bin
+  when: install_grok | default(false)
+
+- name: Install the Grok CLI (xAI) for developer
+  ansible.builtin.shell: |
+    curl -fsSL https://x.ai/cli/install.sh | bash
+  args:
+    creates: "/home/{{ dev.name }}/.grok/bin/grok"
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+  when:
+    - install_grok | default(false)
+    - not (grok_bin.stat.exists | default(false))
+
+# The Grok installer drops the binary into ~/.grok/bin but does not put that
+# directory on PATH; link it into ~/.local/bin, which every shell here has.
+- name: Link the Grok CLI onto the developer's PATH
+  ansible.builtin.file:
+    src: "/home/{{ dev.name }}/.grok/bin/grok"
+    dest: "/home/{{ dev.name }}/.local/bin/grok"
+    state: link
+    force: true
+    follow: false
+  when:
+    - install_grok | default(false)
+    - grok_bin.stat.exists | default(false)
+
 # Install the OCI Administrator skill pack into each enabled agent harness for
 # this developer (Claude Code, Codex, Gemini CLI, Antigravity). install.sh is
 # idempotent and only reads /opt/oci-skills, writing into the user's own
 # ~/.claude, ~/.codex, ~/.gemini, ~/.antigravity skill directories.
+#
+# A harness is only advertised when its CLI actually exists on this box: the
+# antigravity entry additionally requires the agy binary installed above, so a
+# failed vendor download can never leave a skills directory for a harness that
+# is not there.
 - name: Install OCI Administrator skill pack for developer
   when: install_oci_skills | default(true)
   tags: [oci_skills]
@@ -140,7 +219,7 @@
     # Build the harness list in Ansible (reliable), not via in-shell Jinja. A
     # single pure {{ }} expression returns a native list (not a string), so the
     # argv concatenation below stays a proper list.
-    oci_skills_harnesses: "{{ (['claude'] if (install_claude_code | default(true)) else []) + (['codex'] if (install_codex | default(true)) else []) + (['gemini'] if (install_gemini | default(true)) else []) + (['antigravity'] if (install_antigravity | default(true)) else []) }}"
+    oci_skills_harnesses: "{{ (['claude'] if (install_claude_code | default(true)) else []) + (['codex'] if (install_codex | default(true)) else []) + (['gemini'] if (install_gemini | default(true)) else []) + (['antigravity'] if ((install_antigravity | default(true)) and (agy_bin.stat.exists | default(false))) else []) }}"
   # Run the executable directly (its shebang is bash); avoids /bin/sh + pipefail.
   ansible.builtin.command:
     argv: "{{ ['/opt/oci-skills/install.sh'] + oci_skills_harnesses }}"
@@ -213,3 +292,24 @@
     MULTILLM_GATEWAY_PORT: "{{ multillm_gateway_port | default(8080) }}"
   register: mcp_apply
   changed_when: "'applied' in mcp_apply.stdout"
+
+# Local-LLM wiring (opt-in via INSTALL_OLLAMA): point the developer's shell at
+# the shared Ollama server without hijacking their cloud-authenticated CLIs.
+# `ollama` works through OLLAMA_HOST; Claude Code gets a claude-local alias
+# (Ollama serves the Anthropic Messages API natively); codex reaches local
+# models with `codex --oss`; Gemini CLI accepts an OpenAI-compatible provider.
+- name: Wire the developer shell to the local LLM server
+  when: install_ollama | default(false)
+  tags: [user_config]
+  ansible.builtin.blockinfile:
+    path: "/home/{{ dev.name }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED — local LLM (Ollama)"
+    create: true
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0644'
+    block: |
+      export OLLAMA_HOST="{{ ollama_effective_bind }}:{{ ollama_port }}"
+      # Local-model session (cloud `claude` stays untouched):
+      alias claude-local='ANTHROPIC_BASE_URL=http://{{ ollama_effective_bind }}:{{ ollama_port }} ANTHROPIC_AUTH_TOKEN=ollama ANTHROPIC_MODEL={{ ollama_default_model }} ANTHROPIC_DEFAULT_HAIKU_MODEL={{ ollama_default_model }} claude'
+      # Codex: run `codex --oss` | Gemini CLI: add an OpenAI-compatible provider at http://{{ ollama_effective_bind }}:{{ ollama_port }}/v1
