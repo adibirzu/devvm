@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
+import json
 import re
 import shutil
 import subprocess
@@ -29,6 +30,7 @@ import oci
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts.deploy_config import build_ansible_extra_vars, build_inventory
 from scripts.wg_config import render_wg_client_config
 
 HTML_DASHBOARD_TEMPLATE = """<!DOCTYPE html>
@@ -1376,6 +1378,56 @@ class SDKDeployer:
             shutil.rmtree(ssh_ctrl_dir, ignore_errors=True)
         warn(f"SSH verification timed out. Try manually: ssh -i {ssh_key} {target}")
 
+    def run_ansible_playbook(self) -> None:
+        """Apply the same compiled Ansible configuration as other deploy paths."""
+        if shutil.which("ansible-playbook") is None:
+            warn(
+                "ansible-playbook not found in local PATH. Skipping post-deployment Ansible automation."
+            )
+            warn(
+                "To run configuration manually, install Ansible and execute: "
+                "ansible-playbook -i configs/hosts.ini --extra-vars "
+                "@configs/ansible_vars.json ansible/playbook.yml"
+            )
+            return
+
+        r = self.runtime
+        configs_dir = self.project_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+        inventory_path = configs_dir / "hosts.ini"
+        inventory_path.write_text(
+            build_inventory(
+                connection="ssh",
+                host=self.public_ip,
+                user=r.admin_username,
+                ssh_key=str(r.ssh_private_key_path),
+            ),
+            encoding="utf-8",
+        )
+        extra_vars_path = configs_dir / "ansible_vars.json"
+        extra_vars_path.write_text(
+            json.dumps(
+                build_ansible_extra_vars(
+                    self.env, r.developers, {"install_wireguard": False}
+                )
+            ),
+            encoding="utf-8",
+        )
+        ansible_cmd = [
+            "ansible-playbook",
+            "-i",
+            str(inventory_path),
+            "--extra-vars",
+            f"@{extra_vars_path}",
+            str(self.project_dir / "ansible" / "playbook.yml"),
+        ]
+        log("Applying post-deployment Ansible configuration...")
+        try:
+            subprocess.run(ansible_cmd, check=True)
+        except subprocess.CalledProcessError as exc:
+            warn(f"Ansible playbook execution completed with errors: {exc}")
+            warn(f"You can manually troubleshoot and re-run: {' '.join(ansible_cmd)}")
+
     def print_summary(self) -> None:
         r = self.runtime
         print("")
@@ -1473,6 +1525,7 @@ class SDKDeployer:
         self.write_client_wireguard_config()
         self.save_deployment_info()
         self.verify_ssh()
+        self.run_ansible_playbook()
         self.print_summary()
 
 
