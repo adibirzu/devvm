@@ -1182,23 +1182,6 @@ class SDKDeployer:
             "RDP_PORT": str(r.rdp_port),
             "VNC_PORT": str(r.vnc_port),
             "FIREWALL_STRICT": str(r.firewall_strict).lower(),
-            "INSTALL_CLAUDE_CODE": str(r.install_claude_code).lower(),
-            "INSTALL_CODEX": str(r.install_codex).lower(),
-            "INSTALL_GEMINI": str(r.install_gemini).lower(),
-            "INSTALL_ANTIGRAVITY": str(r.install_antigravity).lower(),
-            "INSTALL_OPENCODE": str(r.install_opencode).lower(),
-            "INSTALL_PI": str(r.install_pi).lower(),
-            "INSTALL_GROK": str(r.install_grok).lower(),
-            "INSTALL_CLINE": str(r.install_cline).lower(),
-            "INSTALL_COPILOT_CLI": str(r.install_copilot_cli).lower(),
-            "INSTALL_CURSOR_AGENT": str(r.install_cursor_agent).lower(),
-            "INSTALL_OLLAMA": str(r.install_ollama).lower(),
-            "OLLAMA_BIND_ADDRESS": r.ollama_bind_address,
-            "OLLAMA_PORT": str(r.ollama_port),
-            "OLLAMA_MODELS": r.ollama_models,
-            "OLLAMA_DEFAULT_MODEL": r.ollama_default_model,
-            "INSTALL_CODE_SERVER": str(r.install_code_server).lower(),
-            "INSTALL_CURSOR": str(r.install_cursor).lower(),
             "VM_PUBLIC_IP": "PENDING",
             "USERS_CONFIG": users_yaml,
             "WG_PEERS_CONFIG": wg_peers,
@@ -1421,6 +1404,11 @@ class SDKDeployer:
         )
         print(
             f"{GREEN}╚══════════════════════════════════════════════════════════════════╝{NC}"
+        )
+        print(
+            f"{GREEN}Next step:{NC} Apply developer-tooling flags (agent CLIs, "
+            "INSTALL_ANTIGRAVITY, INSTALL_OLLAMA) with install.sh in remote "
+            "mode or on-box local mode using this same .env; see docs/INSTALL.md."
         )
         print("")
 
