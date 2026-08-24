@@ -300,6 +300,7 @@ main() {
     prompt_yn INSTALL_CLAUDE_CODE "Install Claude Code CLI?" "y"
     prompt_yn INSTALL_CODEX "Install Codex CLI (OpenAI)?" "y"
     prompt_yn INSTALL_GEMINI "Install Gemini CLI (Google)?" "y"
+    prompt_yn INSTALL_ANTIGRAVITY "Install Antigravity CLI (agy)?" "y"
     prompt_yn INSTALL_CODE_SERVER "Install code-server (VS Code in browser)?" "y"
 
     if [[ "$INSTALL_CODE_SERVER" == "true" ]]; then
@@ -463,6 +464,7 @@ VNC_PORT=$VNC_PORT
 INSTALL_CLAUDE_CODE=$INSTALL_CLAUDE_CODE
 INSTALL_CODEX=$INSTALL_CODEX
 INSTALL_GEMINI=$INSTALL_GEMINI
+INSTALL_ANTIGRAVITY=$INSTALL_ANTIGRAVITY
 INSTALL_OPENCODE=${INSTALL_OPENCODE:-false}
 INSTALL_PI=${INSTALL_PI:-false}
 INSTALL_GROK=${INSTALL_GROK:-false}

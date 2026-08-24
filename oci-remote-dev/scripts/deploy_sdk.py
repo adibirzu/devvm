@@ -542,6 +542,7 @@ class RuntimeConfig:
     install_claude_code: bool
     install_codex: bool
     install_gemini: bool
+    install_antigravity: bool
     install_opencode: bool
     install_pi: bool
     install_grok: bool
@@ -743,6 +744,9 @@ class SDKDeployer:
             ),
             install_codex=env_bool(self._get_env("INSTALL_CODEX", "true"), True),
             install_gemini=env_bool(self._get_env("INSTALL_GEMINI", "true"), True),
+            install_antigravity=env_bool(
+                self._get_env("INSTALL_ANTIGRAVITY", "true"), True
+            ),
             install_opencode=env_bool(
                 self._get_env("INSTALL_OPENCODE", "false"), False
             ),
@@ -1181,6 +1185,7 @@ class SDKDeployer:
             "INSTALL_CLAUDE_CODE": str(r.install_claude_code).lower(),
             "INSTALL_CODEX": str(r.install_codex).lower(),
             "INSTALL_GEMINI": str(r.install_gemini).lower(),
+            "INSTALL_ANTIGRAVITY": str(r.install_antigravity).lower(),
             "INSTALL_OPENCODE": str(r.install_opencode).lower(),
             "INSTALL_PI": str(r.install_pi).lower(),
             "INSTALL_GROK": str(r.install_grok).lower(),
