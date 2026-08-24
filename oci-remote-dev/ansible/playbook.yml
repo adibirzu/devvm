@@ -375,7 +375,7 @@
           ansible.builtin.set_fact:
             node_major: >-
               {{ node_runtime_version.stdout | default('v0', true)
-                 | regex_replace('^v(\d+).*$', '\1') | int }}
+                 | regex_replace('^v(\d+).*$', '\\1') | int }}
 
         - name: Install OpenCode CLI
           community.general.npm:
