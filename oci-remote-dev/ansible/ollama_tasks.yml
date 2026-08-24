@@ -1,0 +1,104 @@
+---
+# Local LLM serving with Ollama, wired into the developers' coding clients.
+# -----------------------------------------------------------------------------
+# The official installer is arch-aware (x86_64 and aarch64 Linux are both
+# first-class upstream — it is the same script NVIDIA GB10 / other arm64 hosts
+# use), registers the ollama systemd service, and is safe to re-run.
+#
+# Binding follows the project-wide rule: services bind the WireGuard/tunnel
+# address when one exists and loopback otherwise (ollama_effective_bind in
+# playbook.yml). The firewall rule for ollama_port lives in playbook.yml's
+# firewall_rules so there is exactly one place that knows the open ports.
+
+- name: Ollama | Check whether Ollama is already installed
+  ansible.builtin.command:
+    cmd: ollama --version
+  register: ollama_version_check
+  changed_when: false
+  failed_when: false
+
+- name: Ollama | Ensure zstd is available
+  # The official release bundles extract with zstd, which minimal cloud images
+  # do not ship; the installer aborts without it.
+  ansible.builtin.package:
+    name: zstd
+    state: present
+  when: ollama_version_check.rc != 0
+
+- name: Ollama | Download the official installer
+  ansible.builtin.get_url:
+    url: https://ollama.com/install.sh
+    dest: /tmp/ollama-install.sh
+    mode: '0755'
+  when: ollama_version_check.rc != 0
+
+- name: Ollama | Run the official installer
+  ansible.builtin.command:
+    cmd: sh /tmp/ollama-install.sh
+  environment:
+    # Non-interactive even on a headless first boot; the service comes up via
+    # systemd below regardless of GPU detection outcome.
+    DEBIAN_FRONTEND: noninteractive
+  when: ollama_version_check.rc != 0
+
+- name: Ollama | Ensure the per-service override directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/ollama.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Ollama | Bind the server to the tunnel/loopback address and port
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/ollama.service.d/devvm-bind.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Service]
+      Environment=OLLAMA_HOST={{ ollama_effective_bind }}:{{ ollama_port }}
+  notify: Restart Ollama
+
+- name: Ollama | Enable and start the server
+  ansible.builtin.systemd:
+    name: ollama
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Ollama | Apply pending service restart
+  ansible.builtin.meta: flush_handlers
+
+- name: Ollama | Parse the requested model list
+  ansible.builtin.set_fact:
+    ollama_model_list: "{{ (ollama_models | default('')).split(',') | map('trim') | reject('equalto', '') | list or [ollama_default_model] }}"
+
+- name: Ollama | Check whether the requested models are present
+  ansible.builtin.command:
+    argv: [ollama, show, "{{ item }}"]
+  environment:
+    # These host-level commands run under Ansible's become context, where HOME
+    # is not guaranteed. Ollama panics instead of reporting a normal error if
+    # it is absent.
+    HOME: /root
+    OLLAMA_HOST: "{{ ollama_effective_bind }}:{{ ollama_port }}"
+  register: ollama_model_check
+  changed_when: false
+  failed_when: false
+  loop: "{{ ollama_model_list }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Ollama | Pull missing models
+  ansible.builtin.command:
+    argv: [ollama, pull, "{{ item.item }}"]
+  environment:
+    HOME: /root
+    OLLAMA_HOST: "{{ ollama_effective_bind }}:{{ ollama_port }}"
+  register: ollama_pull
+  changed_when: ollama_pull.rc == 0
+  loop: "{{ ollama_model_check.results }}"
+  when: item.rc != 0
+  loop_control:
+    label: "{{ item.item }}"

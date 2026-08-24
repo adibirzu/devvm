@@ -96,6 +96,7 @@ class MultiCloudDeployer:
         self.wg_server_private_key = ""
         self.wg_server_public_key = ""
         self.developers: List[Dict[str, Any]] = []
+        self.post_provisioning_complete = False
 
     def _resolve_env_file(self, raw_path: str) -> Path:
         resolved = resolve_env_file(self.project_dir, raw_path)
@@ -806,6 +807,7 @@ class MultiCloudDeployer:
             deployer.execute()
             self.public_ip = deployer.public_ip
             self.instance_id = deployer.instance_ocid
+            self.post_provisioning_complete = True
         except Exception as exc:
             fail(f"OCI SDK deployment failed: {exc}")
 
@@ -1235,16 +1237,10 @@ class MultiCloudDeployer:
     def run_ansible_playbook(self) -> None:
         """Run post-deployment Ansible configuration on the target VM."""
         if shutil.which("ansible-playbook") is None:
-            warn(
-                "ansible-playbook not found in local PATH. Skipping post-deployment Ansible automation."
+            fail(
+                "ansible-playbook is required for post-deployment configuration; "
+                "install Ansible and re-run the deployment."
             )
-            warn(
-                "To run configuration manually, please install Ansible locally and execute:"
-            )
-            warn(
-                "  ansible-playbook -i configs/hosts.ini --extra-vars @configs/ansible_vars.json ansible/playbook.yml"
-            )
-            return
 
         log("Initiating post-deployment Ansible configuration...")
         ssh_key = Path(
@@ -1301,6 +1297,7 @@ class MultiCloudDeployer:
             warn(f"Ansible playbook execution completed with errors: {exc}")
             warn("You can manually troubleshoot and re-run configuration using:")
             warn(f"  {' '.join(ansible_cmd)}")
+            raise
 
     def print_summary(self) -> None:
         print("")
@@ -1444,7 +1441,8 @@ class MultiCloudDeployer:
         self.write_client_wireguard_configs()
         self.save_deployment_info()
         self.verify_ssh()
-        self.run_ansible_playbook()
+        if not self.post_provisioning_complete:
+            self.run_ansible_playbook()
         self.print_summary()
 
 

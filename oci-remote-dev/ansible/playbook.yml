@@ -19,6 +19,24 @@
     install_claude_code: true
     install_codex: true
     install_gemini: true
+    # Additional agent CLIs. Default OFF so an existing deployment does not
+    # silently grow new global installs on its next run — opt in per tool via
+    # the matching INSTALL_* env flag (see .env.example and docs/TOOLCHAIN.md).
+    install_opencode: false
+    install_pi: false            # needs Node >= 22 (set NODE_VERSION=22)
+    install_grok: false
+    install_cline: false
+    install_copilot_cli: false   # needs Node >= 22 (set NODE_VERSION=22)
+    install_cursor_agent: false
+    # Local LLM serving (Ollama) + wiring for the coding clients.
+    install_ollama: false
+    ollama_bind_address: ""      # empty = follow wg_server_ip (loopback without --wireguard)
+    ollama_port: 11434
+    ollama_models: ""            # comma-separated models to pull after install, e.g. qwen3-coder,gpt-oss:20b
+    ollama_default_model: "qwen3-coder"
+    # Same binding rule as every other service here: follow the WireGuard/tunnel
+    # address when there is one, loopback otherwise (--bind-address wins).
+    ollama_effective_bind: "{{ ollama_bind_address if (ollama_bind_address | default('')) | length > 0 else wg_server_ip }}"
     install_code_server: true
     install_podman: true
     install_dev_tools: true
@@ -38,7 +56,7 @@
     # OCI Administrator skill pack (Claude/Codex/Gemini/Antigravity) — installed
     # per-developer from /opt/oci-skills. Public repo, works OOTB.
     install_oci_skills: true
-    install_antigravity: true
+    install_antigravity: false
     oci_skills_source_path: ""
     oci_skills_git_url: "https://github.com/adibirzu/oci-skills.git"
     oci_skills_git_version: "main"
@@ -125,223 +143,6 @@
         user: "{{ item.name }}"
         key: "{{ item.ssh_key }}"
         state: present
-
-    - name: Install local container tooling
-      ansible.builtin.apt:
-        name:
-          - podman
-          - podman-docker
-          - buildah
-          - skopeo
-          - uidmap
-          - slirp4netns
-          - fuse-overlayfs
-        state: present
-      when: install_podman | default(true)
-
-    - name: Check AWS CLI availability
-      ansible.builtin.command:
-        cmd: aws --version
-      register: aws_cli_check
-      changed_when: false
-      failed_when: false
-      when:
-        - install_csp_clis | default(true)
-        - install_aws_cli | default(true)
-
-    - name: Download AWS CLI v2 installer
-      ansible.builtin.get_url:
-        url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
-        dest: /tmp/awscliv2.zip
-        mode: '0644'
-      when:
-        - install_csp_clis | default(true)
-        - install_aws_cli | default(true)
-        - aws_cli_check.rc != 0
-
-    - name: Reset AWS CLI v2 installer directory
-      ansible.builtin.file:
-        path: /tmp/aws
-        state: absent
-      when:
-        - install_csp_clis | default(true)
-        - install_aws_cli | default(true)
-        - aws_cli_check.rc != 0
-
-    - name: Unpack AWS CLI v2 installer
-      ansible.builtin.unarchive:
-        src: /tmp/awscliv2.zip
-        dest: /tmp
-        remote_src: true
-      when:
-        - install_csp_clis | default(true)
-        - install_aws_cli | default(true)
-        - aws_cli_check.rc != 0
-
-    - name: Install AWS CLI v2
-      ansible.builtin.command:
-        cmd: /tmp/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
-      when:
-        - install_csp_clis | default(true)
-        - install_aws_cli | default(true)
-        - aws_cli_check.rc != 0
-
-    - name: Ensure APT keyring directory exists
-      ansible.builtin.file:
-        path: /etc/apt/keyrings
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-      when: install_csp_clis | default(true)
-
-    - name: Install GitHub CLI repository key
-      ansible.builtin.get_url:
-        url: https://cli.github.com/packages/githubcli-archive-keyring.gpg
-        dest: /etc/apt/keyrings/githubcli-archive-keyring.gpg
-        mode: '0644'
-      when: install_github_cli | default(true)
-
-    - name: Add GitHub CLI APT repository
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main"
-        state: present
-        filename: github-cli
-      when: install_github_cli | default(true)
-
-    - name: Install GitHub CLI
-      ansible.builtin.apt:
-        name: gh
-        state: present
-        update_cache: true
-      when: install_github_cli | default(true)
-
-    - name: Install Azure CLI repository key
-      ansible.builtin.get_url:
-        url: https://packages.microsoft.com/keys/microsoft.asc
-        dest: /etc/apt/keyrings/microsoft.asc
-        mode: '0644'
-      when:
-        - install_csp_clis | default(true)
-        - install_azure_cli | default(true)
-
-    - name: Add Azure CLI APT repository
-      ansible.builtin.apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.asc] https://packages.microsoft.com/repos/azure-cli/ {{ ansible_distribution_release }} main"
-        state: present
-        filename: azure-cli
-      when:
-        - install_csp_clis | default(true)
-        - install_azure_cli | default(true)
-
-    - name: Install Azure CLI
-      ansible.builtin.apt:
-        name: azure-cli
-        state: present
-        update_cache: true
-      when:
-        - install_csp_clis | default(true)
-        - install_azure_cli | default(true)
-
-    - name: Install Google Cloud CLI repository key
-      ansible.builtin.get_url:
-        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
-        dest: /etc/apt/keyrings/google-cloud.asc
-        mode: '0644'
-      when:
-        - install_csp_clis | default(true)
-        - install_gcp_cli | default(true)
-
-    - name: Add Google Cloud CLI APT repository
-      ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/google-cloud.asc] https://packages.cloud.google.com/apt cloud-sdk main"
-        state: present
-        filename: google-cloud-cli
-      when:
-        - install_csp_clis | default(true)
-        - install_gcp_cli | default(true)
-
-    - name: Install Google Cloud CLI
-      ansible.builtin.apt:
-        name: google-cloud-cli
-        state: present
-        update_cache: true
-      when:
-        - install_csp_clis | default(true)
-        - install_gcp_cli | default(true)
-
-    - name: Install OCI CLI with pipx
-      ansible.builtin.command:
-        cmd: pipx install oci-cli
-        creates: /usr/local/bin/oci
-      environment:
-        PIPX_HOME: /opt/pipx
-        PIPX_BIN_DIR: /usr/local/bin
-      when:
-        - install_csp_clis | default(true)
-        - install_oci_cli | default(true)
-
-    - name: Install GUI and XRDP for visualization
-      ansible.builtin.apt:
-        name:
-          - xfce4
-          - xfce4-goodies
-          - xrdp
-        state: present
-
-    - name: Enable and start XRDP services
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        enabled: true
-        state: started
-      loop:
-        - xrdp
-        - xrdp-sesman
-
-    - name: Add xrdp user to ssl-cert group
-      ansible.builtin.user:
-        name: xrdp
-        groups: ssl-cert
-        append: true
-
-    - name: Ensure polkit localauthority directory exists
-      ansible.builtin.file:
-        path: /etc/polkit-1/localauthority/50-local.d
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-
-    - name: Configure polkit for XRDP colord
-      ansible.builtin.copy:
-        dest: /etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla
-        owner: root
-        group: root
-        mode: '0644'
-        content: |
-          [Allow Colord all Users]
-          Identity=unix-user:*
-          Action=org.freedesktop.color-manager.create-device;org.freedesktop.color-manager.create-profile;org.freedesktop.color-manager.delete-device;org.freedesktop.color-manager.delete-profile;org.freedesktop.color-manager.modify-device;org.freedesktop.color-manager.modify-profile
-          ResultAny=no
-          ResultInactive=no
-          ResultActive=yes
-
-    - name: Set default XRDP startwm script to XFCE
-      ansible.builtin.copy:
-        dest: /etc/xrdp/startwm.sh
-        owner: root
-        group: root
-        mode: '0755'
-        content: |
-          #!/bin/sh
-          unset DBUS_SESSION_BUS_ADDRESS
-          unset XDG_RUNTIME_DIR
-          if [ -r /etc/default/locale ]; then
-            . /etc/default/locale
-            export LANG LANGUAGE
-          fi
-          exec /usr/bin/startxfce4
-
       loop: "{{ developers }}"
       loop_control:
         label: "{{ item.name }}"
@@ -393,8 +194,11 @@
           loop: "{{ developers }}"
           loop_control:
             label: "{{ item.name }}"
-    - name: Download Cursor AppImage globally
-      when: install_cursor
+    - name: Download Cursor AppImage globally (x86_64 only)
+      # Upstream publishes the desktop AppImage for x64 only; on arm64 this is
+      # skipped with a note instead of leaving a broken/wrong-arch download
+      # behind (the cursor-agent CLI is a separate, arch-aware install).
+      when: install_cursor and ansible_architecture == 'x86_64'
       block:
         - name: Create Cursor directory
           ansible.builtin.file:
@@ -408,6 +212,14 @@
             dest: /opt/cursor/cursor.AppImage
             mode: '0755'
           ignore_errors: true
+
+    - name: Note Cursor IDE skipped (no arm64 AppImage published upstream)
+      ansible.builtin.debug:
+        msg: >-
+          install_cursor is enabled but the Cursor IDE AppImage is x86_64-only;
+          it was skipped on {{ ansible_architecture }}. The cursor-agent CLI
+          supports arm64 and can be installed instead (INSTALL_CURSOR_AGENT=true).
+      when: install_cursor and ansible_architecture != 'x86_64'
 
     - name: Provision the MultiLLM gateway source
       when: install_multillm_gateway | default(true)
@@ -545,6 +357,76 @@
             state: present
           when: install_gemini
           ignore_errors: true
+
+        # The CLIs below ship platform packages for linux-x64 AND linux-arm64
+        # (or are pure Node), so the same npm install works on both. See
+        # docs/TOOLCHAIN.md for the per-tool architecture verification notes.
+        #
+        # pi and the Copilot CLI need Node >= 22 at RUNTIME. The gate checks the
+        # actually-installed Node major, not NODE_VERSION: a re-run does not
+        # upgrade an existing Node install, so the declared value can lie.
+        - name: Detect the installed Node.js major version
+          ansible.builtin.command:
+            cmd: node --version
+          register: node_runtime_version
+          changed_when: false
+          failed_when: false
+
+        - name: Compute the installed Node.js major version
+          ansible.builtin.set_fact:
+            node_major: >-
+              {{ (node_runtime_version.stdout | default('v0', true))
+                 .split('v')[-1].split('.')[0] | int }}
+
+        - name: Install OpenCode CLI
+          community.general.npm:
+            name: "opencode-ai"
+            global: true
+            state: present
+          when: install_opencode | default(false)
+
+        - name: Install pi coding agent CLI (needs Node >= 22)
+          community.general.npm:
+            name: "@earendil-works/pi-coding-agent"
+            global: true
+            state: present
+          when:
+            - install_pi | default(false)
+            - node_major | int >= 22
+
+        - name: Install Cline CLI
+          community.general.npm:
+            name: "cline"
+            global: true
+            state: present
+          when: install_cline | default(false)
+
+        - name: Install GitHub Copilot CLI (needs Node >= 22)
+          community.general.npm:
+            name: "@github/copilot"
+            global: true
+            state: present
+          when:
+            - install_copilot_cli | default(false)
+            - node_major | int >= 22
+
+    - name: Note Node-22-only agent CLIs skipped
+      # pi and the Copilot CLI require a newer Node than the one installed; say
+      # so instead of failing or silently not installing them.
+      ansible.builtin.debug:
+        msg: >-
+          Node.js v{{ node_major | default('?') }} is installed but pi
+          (@earendil-works/pi-coding-agent) and the GitHub Copilot CLI require
+          Node >= 22. Set NODE_VERSION=22 and upgrade Node (a fresh deploy picks
+          it up automatically; an existing one needs `apt install nodejs` after
+          the repo switch), then re-run to install the ones you enabled.
+      when:
+        - (node_major | default(0)) | int < 22
+        - (install_pi | default(false)) or (install_copilot_cli | default(false))
+
+    - name: Configure local LLM serving (Ollama + client wiring)
+      ansible.builtin.include_tasks: ollama_tasks.yml
+      when: install_ollama | default(false)
 
     - name: Install pair-claude shared session helper
       ansible.builtin.copy:
@@ -876,6 +758,9 @@
             + ([{'port': multillm_gateway_port | default(8080), 'proto': 'tcp',
                  'from_ip': wg_network | default('10.200.200.0/24')}]
                if (install_multillm_gateway | default(true)) else [])
+            + ([{'port': ollama_port | default(11434), 'proto': 'tcp',
+                 'from_ip': wg_network | default('10.200.200.0/24')}]
+               if (install_ollama | default(false)) else [])
             + ([{'port': control_plane_port | default(8082), 'proto': 'tcp',
                  'from_ip': wg_network | default('10.200.200.0/24')}]
                if (install_agent_os | default(true)) else [])
@@ -908,6 +793,12 @@
       when: install_agent_os | default(true)
 
   handlers:
+    - name: Restart Ollama
+      ansible.builtin.systemd:
+        name: ollama
+        state: restarted
+        daemon_reload: true
+
     - name: Restart multillm-gateway
       ansible.builtin.systemd:
         name: multillm-gateway

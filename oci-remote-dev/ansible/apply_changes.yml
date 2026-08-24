@@ -30,6 +30,11 @@
     # configs/ansible_vars.json when it exists, so toggles stay consistent.
     install_cursor: true
     install_code_server: true
+    install_ollama: false
+    ollama_bind_address: ""
+    ollama_effective_bind: "{{ ollama_bind_address if (ollama_bind_address | default('')) | length > 0 else (wg_server_ip | default('127.0.0.1', true)) }}"
+    ollama_port: 11434
+    ollama_default_model: "qwen3-coder"
 
   tasks:
     # ── Additions ────────────────────────────────────────────────────────────

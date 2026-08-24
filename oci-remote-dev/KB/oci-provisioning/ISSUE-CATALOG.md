@@ -137,3 +137,12 @@ This catalog records failures observed while provisioning and validating the VM.
   - Apply from one of the final allowed source IPs (or keep a temporary break-glass CIDR during rollout).
   - Validate with `nc`/`ssh` from each allowed IP before removing broader access.
   - Keep OCI Console access available to revert NSG/security-list rules if lockout occurs.
+
+## 13) Helm apt mirror baltocdn.com decommissioned, domain re-registered (supply-chain)
+
+- Symptom:
+  - A host using the retired `baltocdn.com` Helm source cannot verify or install Helm.
+- Fix:
+  - Re-run the current playbook; it removes legacy Helm source artifacts before configuring the supported mirror.
+- Lesson:
+  - Treat a retired vendor apt mirror as untrusted. The authoritative Helm source and signing-key policy are in [`docs/TOOLCHAIN.md`](../../docs/TOOLCHAIN.md).
