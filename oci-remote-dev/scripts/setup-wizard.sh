@@ -300,7 +300,7 @@ main() {
     prompt_yn INSTALL_CLAUDE_CODE "Install Claude Code CLI?" "y"
     prompt_yn INSTALL_CODEX "Install Codex CLI (OpenAI)?" "y"
     prompt_yn INSTALL_GEMINI "Install Gemini CLI (Google)?" "y"
-    prompt_yn INSTALL_ANTIGRAVITY "Install Antigravity CLI (agy)?" "y"
+    prompt_yn INSTALL_ANTIGRAVITY "Install Antigravity CLI (agy)?" "n"
     prompt_yn INSTALL_CODE_SERVER "Install code-server (VS Code in browser)?" "y"
 
     if [[ "$INSTALL_CODE_SERVER" == "true" ]]; then

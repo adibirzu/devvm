@@ -32,7 +32,7 @@ fetched and inspected for arch handling on 2026-08-24.
 
 | Tool | Installer | linux/amd64 | linux/arm64 | Notes |
 | --- | --- | --- | --- | --- |
-| Antigravity CLI (`agy`) | `https://antigravity.google/cli/install.sh` | x86_64 branch present | aarch64 branch present | Fixes the old gap where `install_antigravity` installed the skills pack for a harness whose CLI was never provisioned. The skills-pack harness list now also gates on the installed binary, so a failed download can never advertise antigravity. |
+| Antigravity CLI (`agy`) | `https://antigravity.google/cli/install.sh` | x86_64 branch present | aarch64 branch present | Opt in with `INSTALL_ANTIGRAVITY=true`; it installs the CLI and enables the skills-pack entry. The harness list also gates on the installed binary, so a failed download can never advertise Antigravity. |
 | Cursor agent CLI | `https://cursor.com/install` → `~/.local/bin/cursor-agent` | x86_64 branch present | aarch64 branch present | Terminal agent only. The **Cursor IDE AppImage is x86_64-only upstream** and is skipped on arm64 with a debug note (`install_cursor`). |
 | Grok CLI | `https://x.ai/cli/install.sh` → `~/.grok/bin/grok` | x86_64 branch present | aarch64 branch present | Installs into the user home. |
 

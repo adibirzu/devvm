@@ -445,7 +445,7 @@ ansible-playbook -i configs/hosts.ini --extra-vars @configs/ansible_vars.json \
 
 > Toggle with `install_oci_skills` (default true); pin a fork/branch with
 > `oci_skills_git_url` / `oci_skills_git_version`. Antigravity install is gated
-> by `install_antigravity` (default true).
+> by `install_antigravity` (default false).
 
 ---
 

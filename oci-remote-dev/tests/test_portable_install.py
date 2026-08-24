@@ -210,6 +210,7 @@ class TestAnsibleAssets(unittest.TestCase):
             "install_copilot_cli",
             "install_cursor_agent",
             "install_ollama",
+            "install_antigravity",
         ):
             self.assertFalse(
                 extra[flag],

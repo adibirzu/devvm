@@ -747,7 +747,7 @@ class SDKDeployer:
             install_codex=env_bool(self._get_env("INSTALL_CODEX", "true"), True),
             install_gemini=env_bool(self._get_env("INSTALL_GEMINI", "true"), True),
             install_antigravity=env_bool(
-                self._get_env("INSTALL_ANTIGRAVITY", "true"), True
+                self._get_env("INSTALL_ANTIGRAVITY", "false"), False
             ),
             install_opencode=env_bool(
                 self._get_env("INSTALL_OPENCODE", "false"), False
@@ -1381,15 +1381,10 @@ class SDKDeployer:
     def run_ansible_playbook(self) -> None:
         """Apply the same compiled Ansible configuration as other deploy paths."""
         if shutil.which("ansible-playbook") is None:
-            warn(
-                "ansible-playbook not found in local PATH. Skipping post-deployment Ansible automation."
+            fail(
+                "ansible-playbook is required for post-deployment configuration; "
+                "install Ansible and re-run the deployment."
             )
-            warn(
-                "To run configuration manually, install Ansible and execute: "
-                "ansible-playbook -i configs/hosts.ini --extra-vars "
-                "@configs/ansible_vars.json ansible/playbook.yml"
-            )
-            return
 
         r = self.runtime
         configs_dir = self.project_dir / "configs"
