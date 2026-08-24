@@ -1237,16 +1237,10 @@ class MultiCloudDeployer:
     def run_ansible_playbook(self) -> None:
         """Run post-deployment Ansible configuration on the target VM."""
         if shutil.which("ansible-playbook") is None:
-            warn(
-                "ansible-playbook not found in local PATH. Skipping post-deployment Ansible automation."
+            fail(
+                "ansible-playbook is required for post-deployment configuration; "
+                "install Ansible and re-run the deployment."
             )
-            warn(
-                "To run configuration manually, please install Ansible locally and execute:"
-            )
-            warn(
-                "  ansible-playbook -i configs/hosts.ini --extra-vars @configs/ansible_vars.json ansible/playbook.yml"
-            )
-            return
 
         log("Initiating post-deployment Ansible configuration...")
         ssh_key = Path(

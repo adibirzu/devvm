@@ -83,3 +83,28 @@ installer on a live Ubuntu 24.04 arm64 host (they were read, not executed),
 and the RedHat-family equivalents of the same URLs (the installers are
 distro-agnostic shell scripts; Ansible tasks use no distro-specific modules
 for these tools).
+
+## Canonical Ubuntu arm64 live-validation configuration
+
+For the two-pass Ubuntu 24.04 aarch64 systemd-container validation, create
+`/src/.env` with these opt-ins before running
+`bash install.sh --unattended --minimal` twice:
+
+```dotenv
+ADMIN_USERNAME=dev
+INSTALL_MULTILLM_GATEWAY=false
+INSTALL_OPENCODE=true
+INSTALL_PI=true
+INSTALL_GROK=true
+INSTALL_CLINE=true
+INSTALL_COPILOT_CLI=true
+INSTALL_CURSOR_AGENT=true
+INSTALL_ANTIGRAVITY=true
+INSTALL_OLLAMA=true
+NODE_VERSION=22
+```
+
+`INSTALL_ANTIGRAVITY=true` is required here because it intentionally defaults
+to false for existing deployments. The first pass checks the listed CLIs,
+Ollama service and shell wiring; the second pass checks idempotency and that
+Ollama is not restarted without a configuration change.

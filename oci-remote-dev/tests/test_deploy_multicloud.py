@@ -176,6 +176,15 @@ class TestMultiCloudDeployer(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 deployer.run_ansible_playbook()
 
+    def test_post_provisioning_requires_ansible(self) -> None:
+        args = MagicMock()
+        args.env_file = str(self.env_file)
+        deployer = MultiCloudDeployer(args)
+
+        with patch("scripts.deploy_multicloud.shutil.which", return_value=None):
+            with self.assertRaises(RuntimeError):
+                deployer.run_ansible_playbook()
+
 
 class TestWireGuardClientConfig(unittest.TestCase):
     """Regression fence for the macOS split-tunnel/DNS routing fix."""
