@@ -797,6 +797,12 @@
       when: install_agent_os | default(true)
 
   handlers:
+    - name: Restart Ollama
+      ansible.builtin.systemd:
+        name: ollama
+        state: restarted
+        daemon_reload: true
+
     - name: Restart multillm-gateway
       ansible.builtin.systemd:
         name: multillm-gateway
