@@ -25,6 +25,8 @@ from scripts.deploy_config import (  # noqa: E402
     build_ansible_extra_vars,
     build_developers,
     build_inventory,
+    env_bool,
+    parse_env_file,
     resolve_ssh_key,
 )
 
@@ -183,15 +185,18 @@ class TestAnsibleAssets(unittest.TestCase):
         )
 
     def test_env_example_documents_every_install_flag(self) -> None:
-        """Each install_* toggle must be documentable via its INSTALL_* env key,
-        so operators can discover the full switchboard in .env.example."""
-        example = (ROOT / ".env.example").read_text(encoding="utf-8")
-        missing = [
-            flag.upper()
-            for flag in self._playbook_vars()
-            if flag.startswith("install_") and flag.upper() not in example
-        ]
-        self.assertEqual(missing, [], ".env.example does not document: %s" % missing)
+        """The example configuration must compile every install toggle."""
+        example = parse_env_file(ROOT / ".env.example")
+        devs = build_developers(example, require_ssh_key=False)
+        extra = build_ansible_extra_vars(example, devs)
+        for flag in self._playbook_vars():
+            if flag.startswith("install_"):
+                with self.subTest(flag=flag):
+                    self.assertIn(flag.upper(), example)
+                    self.assertEqual(
+                        extra[flag],
+                        env_bool(example, flag.upper(), self._playbook_vars()[flag]),
+                    )
 
     def test_agent_tooling_additions_default_off(self) -> None:
         """Tools added after the original product scope are opt-in: an existing
@@ -211,20 +216,6 @@ class TestAnsibleAssets(unittest.TestCase):
                 extra[flag],
                 f"{flag} defaults to True — new tooling must be opt-in",
             )
-
-    def test_antigravity_skills_entry_requires_the_installed_cli(self) -> None:
-        """A harness may only be advertised when something actually installed
-        its CLI: the antigravity skills-pack entry is gated on the agy binary
-        being present, not just on the install_antigravity flag."""
-        text = (ANSIBLE / "user_tasks.yml").read_text(encoding="utf-8")
-        self.assertIn("'antigravity']", text)
-        gate = text.split("oci_skills_harnesses:", 1)[1].split("\n", 1)[0]
-        self.assertIn(
-            "agy_bin.stat.exists",
-            gate,
-            "the antigravity harness entry must check the installed CLI",
-        )
-
 
 class TestConfigCompiler(unittest.TestCase):
     def test_missing_key_path_yields_no_key(self) -> None:

@@ -153,6 +153,12 @@
     - install_antigravity | default(true)
     - not (agy_bin.stat.exists | default(false))
 
+- name: Check whether the Antigravity CLI is ready
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.local/bin/agy"
+  register: agy_bin
+  when: install_antigravity | default(true)
+
 - name: Check if the Cursor agent CLI is already installed
   ansible.builtin.stat:
     path: "/home/{{ dev.name }}/.local/bin/cursor-agent"
@@ -188,6 +194,12 @@
   when:
     - install_grok | default(false)
     - not (grok_bin.stat.exists | default(false))
+
+- name: Check whether the Grok CLI is ready
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.grok/bin/grok"
+  register: grok_bin
+  when: install_grok | default(false)
 
 # The Grok installer drops the binary into ~/.grok/bin but does not put that
 # directory on PATH; link it into ~/.local/bin, which every shell here has.
