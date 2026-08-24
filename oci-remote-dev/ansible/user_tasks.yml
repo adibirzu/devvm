@@ -139,7 +139,7 @@
   ansible.builtin.stat:
     path: "/home/{{ dev.name }}/.local/bin/agy"
   register: agy_bin
-  when: install_antigravity | default(true)
+  when: install_antigravity | default(false)
 
 - name: Install the Antigravity CLI (agy) for developer
   ansible.builtin.shell: |
@@ -150,14 +150,14 @@
   environment:
     HOME: "/home/{{ dev.name }}"
   when:
-    - install_antigravity | default(true)
+    - install_antigravity | default(false)
     - not (agy_bin.stat.exists | default(false))
 
 - name: Check whether the Antigravity CLI is ready
   ansible.builtin.stat:
     path: "/home/{{ dev.name }}/.local/bin/agy"
   register: agy_bin
-  when: install_antigravity | default(true)
+  when: install_antigravity | default(false)
 
 - name: Check if the Cursor agent CLI is already installed
   ansible.builtin.stat:
@@ -231,7 +231,7 @@
     # Build the harness list in Ansible (reliable), not via in-shell Jinja. A
     # single pure {{ }} expression returns a native list (not a string), so the
     # argv concatenation below stays a proper list.
-    oci_skills_harnesses: "{{ (['claude'] if (install_claude_code | default(true)) else []) + (['codex'] if (install_codex | default(true)) else []) + (['gemini'] if (install_gemini | default(true)) else []) + (['antigravity'] if ((install_antigravity | default(true)) and (agy_bin.stat.exists | default(false))) else []) }}"
+    oci_skills_harnesses: "{{ (['claude'] if (install_claude_code | default(true)) else []) + (['codex'] if (install_codex | default(true)) else []) + (['gemini'] if (install_gemini | default(true)) else []) + (['antigravity'] if ((install_antigravity | default(false)) and (agy_bin.stat.exists | default(false))) else []) }}"
   # Run the executable directly (its shebang is bash); avoids /bin/sh + pipefail.
   ansible.builtin.command:
     argv: "{{ ['/opt/oci-skills/install.sh'] + oci_skills_harnesses }}"

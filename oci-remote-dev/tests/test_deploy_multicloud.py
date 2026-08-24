@@ -150,6 +150,16 @@ class TestMultiCloudDeployer(unittest.TestCase):
         self.assertIn("- name: charlie", rendered_init)
         self.assertIn('devs: "testowner" "alice" "charlie"', rendered_init)
 
+    def test_sdk_fallback_skips_duplicate_post_provisioning(self) -> None:
+        deployer = MagicMock()
+        deployer.args = MagicMock(dry_run=False, yes=True)
+        deployer.provider = "OCI"
+        deployer.post_provisioning_complete = True
+
+        MultiCloudDeployer.execute(deployer)
+
+        deployer.run_ansible_playbook.assert_not_called()
+
 
 class TestWireGuardClientConfig(unittest.TestCase):
     """Regression fence for the macOS split-tunnel/DNS routing fix."""

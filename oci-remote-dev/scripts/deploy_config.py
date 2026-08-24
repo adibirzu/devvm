@@ -299,7 +299,7 @@ def build_ansible_extra_vars(
         "install_resilience_layer": env_bool(env, "INSTALL_RESILIENCE_LAYER", True),
         "install_agent_os": env_bool(env, "INSTALL_AGENT_OS", True),
         "install_oci_skills": env_bool(env, "INSTALL_OCI_SKILLS", True),
-        "install_antigravity": env_bool(env, "INSTALL_ANTIGRAVITY", True),
+        "install_antigravity": env_bool(env, "INSTALL_ANTIGRAVITY", False),
         "oci_skills_source_path": env_get(env, "OCI_SKILLS_SOURCE_PATH", ""),
         "oci_skills_git_url": env_get(
             env, "OCI_SKILLS_GIT_URL", "https://github.com/adibirzu/oci-skills.git"

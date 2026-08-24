@@ -83,6 +83,11 @@ class TestSDKPostProvisioning(unittest.TestCase):
                 with self.assertRaises(subprocess.CalledProcessError):
                     SDKDeployer.run_ansible_playbook(deployer)
 
+    def test_post_provisioning_requires_ansible(self) -> None:
+        with patch("scripts.deploy_sdk.shutil.which", return_value=None):
+            with self.assertRaises(RuntimeError):
+                SDKDeployer.run_ansible_playbook(MagicMock())
+
 
 if __name__ == "__main__":
     unittest.main()

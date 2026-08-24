@@ -96,6 +96,7 @@ class MultiCloudDeployer:
         self.wg_server_private_key = ""
         self.wg_server_public_key = ""
         self.developers: List[Dict[str, Any]] = []
+        self.post_provisioning_complete = False
 
     def _resolve_env_file(self, raw_path: str) -> Path:
         resolved = resolve_env_file(self.project_dir, raw_path)
@@ -806,6 +807,7 @@ class MultiCloudDeployer:
             deployer.execute()
             self.public_ip = deployer.public_ip
             self.instance_id = deployer.instance_ocid
+            self.post_provisioning_complete = True
         except Exception as exc:
             fail(f"OCI SDK deployment failed: {exc}")
 
@@ -1444,7 +1446,8 @@ class MultiCloudDeployer:
         self.write_client_wireguard_configs()
         self.save_deployment_info()
         self.verify_ssh()
-        self.run_ansible_playbook()
+        if not self.post_provisioning_complete:
+            self.run_ansible_playbook()
         self.print_summary()
 
 
