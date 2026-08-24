@@ -46,7 +46,8 @@ fetched and inspected for arch handling on 2026-08-24.
   `OLLAMA_PORT` (default 11434), opened in the firewall only when
   `INSTALL_OLLAMA=true`.
 - Models: set `OLLAMA_MODELS="qwen3-coder,gpt-oss:20b"` to pull after install;
-  `OLLAMA_DEFAULT_MODEL` drives the per-user `claude-local` alias.
+  when empty, the installer pulls `OLLAMA_DEFAULT_MODEL`, which also drives the
+  per-user `claude-local` alias.
 - Client wiring (per-developer `.bashrc` block): `OLLAMA_HOST` export plus
   `claude-local` alias (Ollama serves the Anthropic Messages API natively);
   Codex works via `codex --oss`; Gemini CLI accepts an OpenAI-compatible
