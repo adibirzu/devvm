@@ -375,8 +375,8 @@
         - name: Compute the installed Node.js major version
           ansible.builtin.set_fact:
             node_major: >-
-              {{ node_runtime_version.stdout | default('v0', true)
-                 | regex_replace('^v(\d+).*$', '\\1') | int }}
+              {{ (node_runtime_version.stdout | default('v0', true))
+                 .split('v')[-1].split('.')[0] | int }}
 
         - name: Install OpenCode CLI
           community.general.npm:

@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import types
@@ -64,6 +65,23 @@ class TestSDKPostProvisioning(unittest.TestCase):
             self.assertEqual(extra_vars["ollama_models"], "qwen3-coder:30b")
             self.assertFalse(extra_vars["install_wireguard"])
             run.assert_called_once()
+
+    def test_post_provisioning_failure_is_propagated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            deployer = MagicMock()
+            deployer.project_dir = Path(tmp)
+            deployer.public_ip = "203.0.113.10"
+            deployer.env = {}
+            deployer.runtime.admin_username = "devuser"
+            deployer.runtime.ssh_private_key_path = Path("/tmp/id_rsa")
+            deployer.runtime.developers = []
+
+            with patch("scripts.deploy_sdk.shutil.which", return_value="/usr/bin/ansible-playbook"), patch(
+                "scripts.deploy_sdk.subprocess.run",
+                side_effect=subprocess.CalledProcessError(1, ["ansible-playbook"]),
+            ):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    SDKDeployer.run_ansible_playbook(deployer)
 
 
 if __name__ == "__main__":
