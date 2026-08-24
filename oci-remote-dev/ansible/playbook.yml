@@ -21,6 +21,8 @@
     install_gemini: true
     install_code_server: true
     install_podman: true
+    # Opt-in virtualization tooling (qemu + UEFI firmware for aarch64 guests).
+    install_qemu: false
     install_dev_tools: true
     install_github_cli: true
     install_csp_clis: true
