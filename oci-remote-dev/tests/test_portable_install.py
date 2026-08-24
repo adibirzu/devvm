@@ -25,7 +25,6 @@ from scripts.deploy_config import (  # noqa: E402
     build_ansible_extra_vars,
     build_developers,
     build_inventory,
-    env_bool,
     parse_env_file,
     resolve_ssh_key,
 )
@@ -185,18 +184,18 @@ class TestAnsibleAssets(unittest.TestCase):
         )
 
     def test_env_example_documents_every_install_flag(self) -> None:
-        """The example configuration must compile every install toggle."""
+        """The example configuration preserves the compiler's install defaults."""
         example = parse_env_file(ROOT / ".env.example")
         devs = build_developers(example, require_ssh_key=False)
         extra = build_ansible_extra_vars(example, devs)
-        for flag in self._playbook_vars():
-            if flag.startswith("install_"):
-                with self.subTest(flag=flag):
-                    self.assertIn(flag.upper(), example)
-                    self.assertEqual(
-                        extra[flag],
-                        env_bool(example, flag.upper(), self._playbook_vars()[flag]),
-                    )
+        defaults = build_ansible_extra_vars({}, devs)
+        playbook_flags = {
+            flag for flag in self._playbook_vars() if flag.startswith("install_")
+        }
+        self.assertEqual(
+            {flag: extra[flag] for flag in playbook_flags},
+            {flag: defaults[flag] for flag in playbook_flags},
+        )
 
     def test_agent_tooling_additions_default_off(self) -> None:
         """Tools added after the original product scope are opt-in: an existing
