@@ -258,6 +258,20 @@ def build_ansible_extra_vars(
         "install_claude_code": env_bool(env, "INSTALL_CLAUDE_CODE", True),
         "install_codex": env_bool(env, "INSTALL_CODEX", True),
         "install_gemini": env_bool(env, "INSTALL_GEMINI", True),
+        # Additional agent CLIs — opt-in (default off) so an existing
+        # deployment never silently grows new global installs.
+        "install_opencode": env_bool(env, "INSTALL_OPENCODE", False),
+        "install_pi": env_bool(env, "INSTALL_PI", False),
+        "install_grok": env_bool(env, "INSTALL_GROK", False),
+        "install_cline": env_bool(env, "INSTALL_CLINE", False),
+        "install_copilot_cli": env_bool(env, "INSTALL_COPILOT_CLI", False),
+        "install_cursor_agent": env_bool(env, "INSTALL_CURSOR_AGENT", False),
+        # Local LLM serving (Ollama) and the coding-client wiring for it.
+        "install_ollama": env_bool(env, "INSTALL_OLLAMA", False),
+        "ollama_bind_address": env_get(env, "OLLAMA_BIND_ADDRESS", ""),
+        "ollama_port": env_int(env, "OLLAMA_PORT", 11434),
+        "ollama_models": env_get(env, "OLLAMA_MODELS", ""),
+        "ollama_default_model": env_get(env, "OLLAMA_DEFAULT_MODEL", "qwen3-coder"),
         "install_code_server": env_bool(env, "INSTALL_CODE_SERVER", True),
         "install_podman": env_bool(env, "INSTALL_PODMAN", True),
         "install_dev_tools": env_bool(env, "INSTALL_DEV_TOOLS", True),

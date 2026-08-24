@@ -53,14 +53,43 @@
         name: kubectl
         state: present
         update_cache: true
-    - name: Packages | Install Helm repository key
+    # baltocdn.com stopped being the Helm apt mirror in Sept 2025; its expired
+    # domain was later re-registered by a third party and may serve malicious
+    # content (helm.sh security notice, 2026-05-29). The community mirror now
+    # lives on packages.buildkite.com, and upstream documents pinning the signing
+    # key's fingerprint so a compromised mirror cannot swap the key.
+    - name: Packages | Remove legacy Helm repository (decommissioned baltocdn.com domain)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/helm-stable.list
+        - /etc/apt/keyrings/helm.asc
+    - name: Packages | Download the Helm APT signing key (Buildkite-hosted community mirror)
       ansible.builtin.get_url:
-        url: https://baltocdn.com/helm/signing.asc
-        dest: /etc/apt/keyrings/helm.asc
-        mode: '0644'
+        url: https://packages.buildkite.com/helm-linux/helm-debian/gpgkey
+        dest: /tmp/helm-apt-key.asc
+        mode: '0600'
+    - name: Packages | Read the Helm APT key fingerprint
+      ansible.builtin.command:
+        cmd: gpg --show-keys --with-colons /tmp/helm-apt-key.asc
+      register: helm_key_fpr
+      changed_when: false
+    - name: Packages | Refuse a swapped Helm signing key
+      ansible.builtin.assert:
+        that:
+          - helm_key_fpr.stdout is search('DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6')
+        fail_msg: >-
+          The Helm APT key fingerprint does not match the value published at
+          helm.sh/docs/intro/install — potential repository compromise; refusing
+          to trust this key or install Helm from it.
+    - name: Packages | Dearmor the Helm APT key into the keyring
+      ansible.builtin.command:
+        cmd: gpg --dearmor --yes -o /etc/apt/keyrings/helm.gpg /tmp/helm-apt-key.asc
+      changed_when: false
     - name: Packages | Add Helm ARM64 repository
       ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/helm.asc arch=arm64] https://baltocdn.com/helm/stable/debian/ all main"
+        repo: "deb [signed-by=/etc/apt/keyrings/helm.gpg arch=arm64] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main"
         state: present
         filename: helm-stable
     - name: Packages | Install Helm
@@ -159,9 +188,11 @@
         - install_azure_cli | default(true)
 
     - name: Packages | Add the Azure CLI APT repository
+      # Upstream publishes arm64 azure-cli debs (since CLI 2.46.0); the old
+      # arch=amd64 pin left arm64 hosts with a repo that had nothing to serve.
       ansible.builtin.apt_repository:
         repo: >-
-          deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.asc]
+          deb [arch=amd64,arm64 signed-by=/etc/apt/keyrings/microsoft.asc]
           https://packages.microsoft.com/repos/azure-cli/
           {{ ansible_distribution_release }} main
         state: present

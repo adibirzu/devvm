@@ -308,6 +308,22 @@ main() {
         CODE_SERVER_PORT="8443"
     fi
 
+    # Additional agent CLIs — opt-in, default no.
+    prompt_yn INSTALL_OPENCODE "Install OpenCode CLI?" "n"
+    prompt_yn INSTALL_PI "Install pi coding agent? (needs Node >= 22)" "n"
+    prompt_yn INSTALL_GROK "Install Grok CLI (xAI)?" "n"
+    prompt_yn INSTALL_CLINE "Install Cline CLI?" "n"
+    prompt_yn INSTALL_COPILOT_CLI "Install GitHub Copilot CLI? (needs Node >= 22)" "n"
+    prompt_yn INSTALL_CURSOR_AGENT "Install Cursor agent CLI (terminal agent)?" "n"
+    prompt_yn INSTALL_OLLAMA "Install Ollama local-LLM serving + client wiring?" "n"
+    if [[ "$INSTALL_OLLAMA" == "true" ]]; then
+        prompt OLLAMA_MODELS "Ollama models to pull after install (comma-separated)" ""
+        prompt OLLAMA_DEFAULT_MODEL "Default local model for the claude-local alias" "qwen3-coder"
+    else
+        OLLAMA_MODELS=""
+        OLLAMA_DEFAULT_MODEL="qwen3-coder"
+    fi
+
     prompt_yn INSTALL_CURSOR "Install Cursor IDE?" "y"
     prompt_yn INSTALL_PODMAN "Install Podman local container tooling?" "y"
     prompt_yn INSTALL_GITHUB_CLI "Install GitHub CLI (gh)?" "y"
@@ -447,6 +463,17 @@ VNC_PORT=$VNC_PORT
 INSTALL_CLAUDE_CODE=$INSTALL_CLAUDE_CODE
 INSTALL_CODEX=$INSTALL_CODEX
 INSTALL_GEMINI=$INSTALL_GEMINI
+INSTALL_OPENCODE=${INSTALL_OPENCODE:-false}
+INSTALL_PI=${INSTALL_PI:-false}
+INSTALL_GROK=${INSTALL_GROK:-false}
+INSTALL_CLINE=${INSTALL_CLINE:-false}
+INSTALL_COPILOT_CLI=${INSTALL_COPILOT_CLI:-false}
+INSTALL_CURSOR_AGENT=${INSTALL_CURSOR_AGENT:-false}
+INSTALL_OLLAMA=${INSTALL_OLLAMA:-false}
+OLLAMA_BIND_ADDRESS="${OLLAMA_BIND_ADDRESS:-}"
+OLLAMA_PORT=${OLLAMA_PORT:-11434}
+OLLAMA_MODELS="$OLLAMA_MODELS"
+OLLAMA_DEFAULT_MODEL="$OLLAMA_DEFAULT_MODEL"
 INSTALL_CODE_SERVER=$INSTALL_CODE_SERVER
 CODE_SERVER_PORT=$CODE_SERVER_PORT
 INSTALL_CURSOR=$INSTALL_CURSOR

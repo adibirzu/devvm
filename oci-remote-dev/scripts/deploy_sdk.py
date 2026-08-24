@@ -31,7 +31,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.wg_config import render_wg_client_config
 
-
 HTML_DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -543,6 +542,17 @@ class RuntimeConfig:
     install_claude_code: bool
     install_codex: bool
     install_gemini: bool
+    install_opencode: bool
+    install_pi: bool
+    install_grok: bool
+    install_cline: bool
+    install_copilot_cli: bool
+    install_cursor_agent: bool
+    install_ollama: bool
+    ollama_bind_address: str
+    ollama_port: int
+    ollama_models: str
+    ollama_default_model: str
     install_code_server: bool
     install_cursor: bool
     node_version: str
@@ -733,6 +743,23 @@ class SDKDeployer:
             ),
             install_codex=env_bool(self._get_env("INSTALL_CODEX", "true"), True),
             install_gemini=env_bool(self._get_env("INSTALL_GEMINI", "true"), True),
+            install_opencode=env_bool(
+                self._get_env("INSTALL_OPENCODE", "false"), False
+            ),
+            install_pi=env_bool(self._get_env("INSTALL_PI", "false"), False),
+            install_grok=env_bool(self._get_env("INSTALL_GROK", "false"), False),
+            install_cline=env_bool(self._get_env("INSTALL_CLINE", "false"), False),
+            install_copilot_cli=env_bool(
+                self._get_env("INSTALL_COPILOT_CLI", "false"), False
+            ),
+            install_cursor_agent=env_bool(
+                self._get_env("INSTALL_CURSOR_AGENT", "false"), False
+            ),
+            install_ollama=env_bool(self._get_env("INSTALL_OLLAMA", "false"), False),
+            ollama_bind_address=self._get_env("OLLAMA_BIND_ADDRESS", ""),
+            ollama_port=int(self._get_env("OLLAMA_PORT", "11434")),
+            ollama_models=self._get_env("OLLAMA_MODELS", ""),
+            ollama_default_model=self._get_env("OLLAMA_DEFAULT_MODEL", "qwen3-coder"),
             install_code_server=env_bool(
                 self._get_env("INSTALL_CODE_SERVER", "true"), True
             ),
@@ -1154,6 +1181,17 @@ class SDKDeployer:
             "INSTALL_CLAUDE_CODE": str(r.install_claude_code).lower(),
             "INSTALL_CODEX": str(r.install_codex).lower(),
             "INSTALL_GEMINI": str(r.install_gemini).lower(),
+            "INSTALL_OPENCODE": str(r.install_opencode).lower(),
+            "INSTALL_PI": str(r.install_pi).lower(),
+            "INSTALL_GROK": str(r.install_grok).lower(),
+            "INSTALL_CLINE": str(r.install_cline).lower(),
+            "INSTALL_COPILOT_CLI": str(r.install_copilot_cli).lower(),
+            "INSTALL_CURSOR_AGENT": str(r.install_cursor_agent).lower(),
+            "INSTALL_OLLAMA": str(r.install_ollama).lower(),
+            "OLLAMA_BIND_ADDRESS": r.ollama_bind_address,
+            "OLLAMA_PORT": str(r.ollama_port),
+            "OLLAMA_MODELS": r.ollama_models,
+            "OLLAMA_DEFAULT_MODEL": r.ollama_default_model,
             "INSTALL_CODE_SERVER": str(r.install_code_server).lower(),
             "INSTALL_CURSOR": str(r.install_cursor).lower(),
             "VM_PUBLIC_IP": "PENDING",

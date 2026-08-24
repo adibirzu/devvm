@@ -69,6 +69,22 @@ AI CLIs, `agentctl`/`palace`/`guardrail`/`mcp-registry`/`control-plane`, the
 systemd units and timers, the landing dashboard, and — unless you pass
 `--no-desktop` — an XFCE desktop over XRDP.
 
+### Agent CLIs and local LLMs
+
+Claude Code, Codex and Gemini CLI install by default. Additional agent CLIs
+(OpenCode, pi, Grok, Cline, GitHub Copilot CLI, Cursor agent) and Ollama
+local-LLM serving are opt-in — flip the matching `INSTALL_*` flag in `.env`
+or answer the wizard prompts. Every tool has a verified arm64 (aarch64) Linux
+path; x86_64-only components (Cursor IDE AppImage) are skipped on arm64 with
+a note instead of failing. Per-tool install paths and architecture evidence:
+[TOOLCHAIN.md](TOOLCHAIN.md).
+
+With `INSTALL_OLLAMA=true` the machine runs an Ollama server (bound to the
+WireGuard IP or loopback, like every other service) and each developer's shell
+gets `OLLAMA_HOST` plus a `claude-local` alias pointed at it; `codex --oss`
+reaches the same models out of the box.
+
+
 ### Networking: bind address and WireGuard
 
 On a cloud VM, cloud-init brings up WireGuard first and every service binds the

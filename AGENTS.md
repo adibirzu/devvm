@@ -30,6 +30,10 @@ first — it makes `KB/` required reading before changing provisioning logic.
   then run `install.sh --unattended --minimal` inside it twice (the second run
   proves idempotency). `sudo -u` fails under PAM in the OL container — set
   `ANSIBLE_BECOME_METHOD=su` there; it is a container artifact, not a bug.
+  Ubuntu 24.04 variant: the base image has no `/sbin/init` and no zstd —
+  `apt-get install systemd zstd python3-certifi`, commit, then run
+  `/lib/systemd/systemd` as PID1. `INSTALL_*` flags reach deploy_config only
+  through the `.env` file (or install.sh `--set`), not process env.
 - `github.com/adibirzu/multillm` currently 404s. Set
   `INSTALL_MULTILLM_GATEWAY=false` (or point `MULTILLM_GIT_URL` elsewhere) when
   testing, or the run fails at the clone.
