@@ -1427,6 +1427,7 @@ class SDKDeployer:
         except subprocess.CalledProcessError as exc:
             warn(f"Ansible playbook execution completed with errors: {exc}")
             warn(f"You can manually troubleshoot and re-run: {' '.join(ansible_cmd)}")
+            raise
 
     def print_summary(self) -> None:
         r = self.runtime
