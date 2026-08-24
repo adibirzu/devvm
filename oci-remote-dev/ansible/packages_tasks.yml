@@ -82,7 +82,7 @@
       ansible.builtin.assert:
         that:
           - helm_key_fingerprints | length > 0
-          - helm_key_fingerprints | reject('equalto', 'DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6') | list | length == 0
+          - helm_key_fingerprints | unique | sort == ['AECF01AC58ECB0517F4445544B196BE9C4313D06', 'DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6']
         fail_msg: >-
           The Helm APT key fingerprint does not match the value published at
           helm.sh/docs/intro/install — potential repository compromise; refusing
