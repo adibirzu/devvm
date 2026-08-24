@@ -146,6 +146,7 @@
       loop: "{{ developers }}"
       loop_control:
         label: "{{ item.name }}"
+      when: (item.ssh_key | default('')) | length > 0
 
     - name: Install base packages, cloud CLIs and Node.js
       ansible.builtin.include_tasks: packages_tasks.yml
