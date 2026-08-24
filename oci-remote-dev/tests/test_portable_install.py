@@ -25,6 +25,7 @@ from scripts.deploy_config import (  # noqa: E402
     build_ansible_extra_vars,
     build_developers,
     build_inventory,
+    parse_env_file,
     resolve_ssh_key,
 )
 
@@ -161,6 +162,60 @@ class TestAnsibleAssets(unittest.TestCase):
         block = text.split("Link shared workspace in homes", 1)[1][:400]
         self.assertIn("follow: false", block)
 
+    def _playbook_vars(self) -> dict:
+        play = yaml.safe_load((ANSIBLE / "playbook.yml").read_text(encoding="utf-8"))
+        return play[0]["vars"]
+
+    def test_playbook_install_flags_flow_through_deploy_config(self) -> None:
+        """Every install_* toggle in the playbook must be compiled by
+        deploy_config.build_ansible_extra_vars, and vice versa — otherwise one
+        surface silently drifts from the other."""
+        playbook_flags = {
+            k for k in self._playbook_vars() if k.startswith("install_")
+        }
+        devs = build_developers({"ADMIN_USERNAME": "maria"}, require_ssh_key=False)
+        extra = build_ansible_extra_vars({}, devs)
+        config_flags = {k for k in extra if k.startswith("install_")}
+        self.assertEqual(
+            playbook_flags,
+            config_flags,
+            "install_* toggles differ between ansible/playbook.yml vars and "
+            "scripts/deploy_config.py build_ansible_extra_vars",
+        )
+
+    def test_env_example_documents_every_install_flag(self) -> None:
+        """The example configuration maps every install toggle to a compiler value."""
+        example = parse_env_file(ROOT / ".env.example")
+        devs = build_developers(example, require_ssh_key=False)
+        extra = build_ansible_extra_vars(example, devs)
+        defaults = build_ansible_extra_vars({}, devs)
+        playbook_flags = {
+            flag for flag in self._playbook_vars() if flag.startswith("install_")
+        }
+        for flag in playbook_flags:
+            with self.subTest(flag=flag):
+                self.assertIn(flag.upper(), example)
+                self.assertEqual(extra[flag], defaults[flag])
+
+    def test_agent_tooling_additions_default_off(self) -> None:
+        """Tools added after the original product scope are opt-in: an existing
+        deployment must not grow new global installs on its next run."""
+        devs = build_developers({"ADMIN_USERNAME": "maria"}, require_ssh_key=False)
+        extra = build_ansible_extra_vars({}, devs)
+        for flag in (
+            "install_opencode",
+            "install_pi",
+            "install_grok",
+            "install_cline",
+            "install_copilot_cli",
+            "install_cursor_agent",
+            "install_ollama",
+            "install_antigravity",
+        ):
+            self.assertFalse(
+                extra[flag],
+                f"{flag} defaults to True — new tooling must be opt-in",
+            )
 
 class TestConfigCompiler(unittest.TestCase):
     def test_missing_key_path_yields_no_key(self) -> None:

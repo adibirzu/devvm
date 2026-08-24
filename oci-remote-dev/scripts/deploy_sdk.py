@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime as dt
+import json
 import re
 import shutil
 import subprocess
@@ -29,8 +30,8 @@ import oci
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts.deploy_config import build_ansible_extra_vars, build_inventory
 from scripts.wg_config import render_wg_client_config
-
 
 HTML_DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -543,6 +544,18 @@ class RuntimeConfig:
     install_claude_code: bool
     install_codex: bool
     install_gemini: bool
+    install_antigravity: bool
+    install_opencode: bool
+    install_pi: bool
+    install_grok: bool
+    install_cline: bool
+    install_copilot_cli: bool
+    install_cursor_agent: bool
+    install_ollama: bool
+    ollama_bind_address: str
+    ollama_port: int
+    ollama_models: str
+    ollama_default_model: str
     install_code_server: bool
     install_cursor: bool
     node_version: str
@@ -733,6 +746,26 @@ class SDKDeployer:
             ),
             install_codex=env_bool(self._get_env("INSTALL_CODEX", "true"), True),
             install_gemini=env_bool(self._get_env("INSTALL_GEMINI", "true"), True),
+            install_antigravity=env_bool(
+                self._get_env("INSTALL_ANTIGRAVITY", "false"), False
+            ),
+            install_opencode=env_bool(
+                self._get_env("INSTALL_OPENCODE", "false"), False
+            ),
+            install_pi=env_bool(self._get_env("INSTALL_PI", "false"), False),
+            install_grok=env_bool(self._get_env("INSTALL_GROK", "false"), False),
+            install_cline=env_bool(self._get_env("INSTALL_CLINE", "false"), False),
+            install_copilot_cli=env_bool(
+                self._get_env("INSTALL_COPILOT_CLI", "false"), False
+            ),
+            install_cursor_agent=env_bool(
+                self._get_env("INSTALL_CURSOR_AGENT", "false"), False
+            ),
+            install_ollama=env_bool(self._get_env("INSTALL_OLLAMA", "false"), False),
+            ollama_bind_address=self._get_env("OLLAMA_BIND_ADDRESS", ""),
+            ollama_port=int(self._get_env("OLLAMA_PORT", "11434")),
+            ollama_models=self._get_env("OLLAMA_MODELS", ""),
+            ollama_default_model=self._get_env("OLLAMA_DEFAULT_MODEL", "qwen3-coder"),
             install_code_server=env_bool(
                 self._get_env("INSTALL_CODE_SERVER", "true"), True
             ),
@@ -1151,11 +1184,6 @@ class SDKDeployer:
             "RDP_PORT": str(r.rdp_port),
             "VNC_PORT": str(r.vnc_port),
             "FIREWALL_STRICT": str(r.firewall_strict).lower(),
-            "INSTALL_CLAUDE_CODE": str(r.install_claude_code).lower(),
-            "INSTALL_CODEX": str(r.install_codex).lower(),
-            "INSTALL_GEMINI": str(r.install_gemini).lower(),
-            "INSTALL_CODE_SERVER": str(r.install_code_server).lower(),
-            "INSTALL_CURSOR": str(r.install_cursor).lower(),
             "VM_PUBLIC_IP": "PENDING",
             "USERS_CONFIG": users_yaml,
             "WG_PEERS_CONFIG": wg_peers,
@@ -1350,6 +1378,52 @@ class SDKDeployer:
             shutil.rmtree(ssh_ctrl_dir, ignore_errors=True)
         warn(f"SSH verification timed out. Try manually: ssh -i {ssh_key} {target}")
 
+    def run_ansible_playbook(self) -> None:
+        """Apply the same compiled Ansible configuration as other deploy paths."""
+        if shutil.which("ansible-playbook") is None:
+            fail(
+                "ansible-playbook is required for post-deployment configuration; "
+                "install Ansible and re-run the deployment."
+            )
+
+        r = self.runtime
+        configs_dir = self.project_dir / "configs"
+        configs_dir.mkdir(parents=True, exist_ok=True)
+        inventory_path = configs_dir / "hosts.ini"
+        inventory_path.write_text(
+            build_inventory(
+                connection="ssh",
+                host=self.public_ip,
+                user=r.admin_username,
+                ssh_key=str(r.ssh_private_key_path),
+            ),
+            encoding="utf-8",
+        )
+        extra_vars_path = configs_dir / "ansible_vars.json"
+        extra_vars_path.write_text(
+            json.dumps(
+                build_ansible_extra_vars(
+                    self.env, r.developers, {"install_wireguard": False}
+                )
+            ),
+            encoding="utf-8",
+        )
+        ansible_cmd = [
+            "ansible-playbook",
+            "-i",
+            str(inventory_path),
+            "--extra-vars",
+            f"@{extra_vars_path}",
+            str(self.project_dir / "ansible" / "playbook.yml"),
+        ]
+        log("Applying post-deployment Ansible configuration...")
+        try:
+            subprocess.run(ansible_cmd, check=True)
+        except subprocess.CalledProcessError as exc:
+            warn(f"Ansible playbook execution completed with errors: {exc}")
+            warn(f"You can manually troubleshoot and re-run: {' '.join(ansible_cmd)}")
+            raise
+
     def print_summary(self) -> None:
         r = self.runtime
         print("")
@@ -1378,6 +1452,11 @@ class SDKDeployer:
         )
         print(
             f"{GREEN}╚══════════════════════════════════════════════════════════════════╝{NC}"
+        )
+        print(
+            f"{GREEN}Next step:{NC} Apply developer-tooling flags (agent CLIs, "
+            "INSTALL_ANTIGRAVITY, INSTALL_OLLAMA) with install.sh in remote "
+            "mode or on-box local mode using this same .env; see docs/INSTALL.md."
         )
         print("")
 
@@ -1442,6 +1521,7 @@ class SDKDeployer:
         self.write_client_wireguard_config()
         self.save_deployment_info()
         self.verify_ssh()
+        self.run_ansible_playbook()
         self.print_summary()
 
 

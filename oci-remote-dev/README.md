@@ -21,7 +21,7 @@ You drive it from your Mac with the native **cmux** agent workspace over the VPN
 - **👥 Isolated multi-developer sandboxes** — dedicated UNIX accounts (`${ADMIN_USERNAME}`, `${DEV_N_NAME}`, … unlimited) each with their own `code-server`, XFCE/XRDP desktop, shell, OAuth sessions, and API keys. Nothing leaks between users.
 - **🔐 Split-tunnel WireGuard VPN** — every service is reachable **only** over the private `${WG_NETWORK}` tunnel. Defaults are tuned so the VPN never hijacks your Mac's DNS or internet routing.
 - **🤖 Shared MultiLLM gateway** — a system service that proxies Claude / Codex / Gemini / Ollama traffic, tracks token + cost usage per developer, and serves a live dashboard over the VPN.
-- **☁️ OCI Administrator skill pack** — [`oci-skills`](https://github.com/adibirzu/oci-skills) is cloned to `/opt/oci-skills` and installed into every developer's Claude Code, Codex, Gemini CLI, and Antigravity. Gives each agent safe, tenancy-agnostic OCI admin skills (IAM, Security & Compliance, Observability & DB, Networking & Compute) with tenancy preflight, dry-run guards, and secret redaction built in.
+- **☁️ OCI Administrator skill pack** — [`oci-skills`](https://github.com/adibirzu/oci-skills) is cloned to `/opt/oci-skills` and installed into every developer's enabled Claude Code, Codex, and Gemini CLI harnesses; Antigravity is included only when its opt-in CLI installation succeeds. Gives each agent safe, tenancy-agnostic OCI admin skills (IAM, Security & Compliance, Observability & DB, Networking & Compute) with tenancy preflight, dry-run guards, and secret redaction built in.
 - **🖥️ cmux-driven local workflow** — run the native macOS agent workspace locally and connect its panes to the remote sandbox over WireGuard.
 - **🤝 Live pair programming** — `pair-claude` shares one AI coding session across developers via a group-owned tmux socket.
 - **⚡ Idempotent Ansible** — decoupled from cloud-init (dodging OCI's 32 KB metadata limit); a tiny boot hook brings up networking + WireGuard, then Ansible configures everything else.
@@ -401,9 +401,11 @@ read-only verb allowlist refuses anything else. Defense in depth under the guard
 Where Agent-OS *governs* what agents may do, the **`oci-skills`** pack gives them
 the *know-how* to administer OCI safely. The public repo
 [`adibirzu/oci-skills`](https://github.com/adibirzu/oci-skills) is cloned to
-`/opt/oci-skills` and installed per-developer into all four agent harnesses, so
-every account's Claude Code, Codex, Gemini CLI, and Antigravity gain the same
-tenancy-agnostic OCI administration skills.
+`/opt/oci-skills` and installed per-developer into enabled agent harnesses.
+Claude Code, Codex, and Gemini CLI receive it by default; Antigravity receives
+it only after its opt-in CLI installation succeeds. This keeps the harness list
+honest while giving enabled accounts the same tenancy-agnostic OCI
+administration skills.
 
 ### What it adds
 
@@ -431,7 +433,7 @@ OCIDs/IPs/secrets** (a `redact.py` gate, with `--strict` for live output).
 ~/.claude/skills/oci-administrator
 ~/.codex/skills/oci-administrator
 ~/.gemini/extensions/oci-skills
-~/.antigravity/skills/oci-administrator
+~/.antigravity/skills/oci-administrator  # only after `agy` is installed
 ```
 
 Run just this layer against a live VM with the `oci_skills` tag:
@@ -445,7 +447,7 @@ ansible-playbook -i configs/hosts.ini --extra-vars @configs/ansible_vars.json \
 
 > Toggle with `install_oci_skills` (default true); pin a fork/branch with
 > `oci_skills_git_url` / `oci_skills_git_version`. Antigravity install is gated
-> by `install_antigravity` (default true).
+> by `install_antigravity` (default false).
 
 ---
 
@@ -537,7 +539,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | XFCE/XRDP desktops, Polkit fix | ✅ Implemented |
 | `pair-claude` shared sessions, `/opt/shared-dev` | ✅ Implemented |
 | AI CLIs (Claude / Codex / Gemini), Cursor | ✅ Implemented |
-| OCI Administrator skill pack (`oci-skills`) installed into all four harnesses | ✅ Implemented |
+| OCI Administrator skill pack (`oci-skills`) installed into enabled harnesses | ✅ Implemented |
 | Shared MultiLLM gateway service + `/dashboard` over VPN | ✅ Implemented |
 | Per-user MultiLLM hooks, launchers, MCP registration | ✅ Implemented |
 | Per-account GitHub identity in shared repos (`git-whoami`) | ✅ Implemented |

@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import shutil
@@ -149,6 +150,40 @@ class TestMultiCloudDeployer(unittest.TestCase):
         self.assertIn("- name: alice", rendered_init)
         self.assertIn("- name: charlie", rendered_init)
         self.assertIn('devs: "testowner" "alice" "charlie"', rendered_init)
+
+    def test_sdk_fallback_skips_duplicate_post_provisioning(self) -> None:
+        deployer = MagicMock()
+        deployer.args = MagicMock(dry_run=False, yes=True)
+        deployer.provider = "OCI"
+        deployer.post_provisioning_complete = True
+
+        MultiCloudDeployer.execute(deployer)
+
+        deployer.run_ansible_playbook.assert_not_called()
+
+    def test_post_provisioning_failure_is_propagated(self) -> None:
+        args = MagicMock()
+        args.env_file = str(self.env_file)
+        deployer = MultiCloudDeployer(args)
+        deployer.project_dir = self.project_dir
+        deployer.public_ip = "203.0.113.10"
+        deployer.developers = []
+
+        with patch("scripts.deploy_multicloud.shutil.which", return_value="/usr/bin/ansible-playbook"), patch(
+            "scripts.deploy_multicloud.subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, ["ansible-playbook"]),
+        ):
+            with self.assertRaises(subprocess.CalledProcessError):
+                deployer.run_ansible_playbook()
+
+    def test_post_provisioning_requires_ansible(self) -> None:
+        args = MagicMock()
+        args.env_file = str(self.env_file)
+        deployer = MultiCloudDeployer(args)
+
+        with patch("scripts.deploy_multicloud.shutil.which", return_value=None):
+            with self.assertRaises(RuntimeError):
+                deployer.run_ansible_playbook()
 
 
 class TestWireGuardClientConfig(unittest.TestCase):
