@@ -72,17 +72,17 @@
         mode: '0600'
     - name: Packages | Read the Helm APT key fingerprint
       ansible.builtin.command:
-        cmd: gpg --show-keys --with-colons --list-options show-primary-fpr-only /tmp/helm-apt-key.asc
+        cmd: gpg --show-keys --with-colons /tmp/helm-apt-key.asc
       register: helm_key_fpr
       changed_when: false
-    - name: Packages | Extract the Helm APT primary fingerprint
+    - name: Packages | Extract the Helm APT primary key fingerprints
       ansible.builtin.set_fact:
-        helm_key_primary_fingerprints: "{{ helm_key_fpr.stdout | regex_findall('^fpr:::::::::([A-F0-9]{40}):', multiline=True) }}"
+        helm_key_primary_fingerprints: "{{ helm_key_fpr.stdout | regex_findall('(?m)^pub:[^\\n]*\\n^fpr:::::::::([A-F0-9]{40}):') }}"
     - name: Packages | Refuse a swapped Helm signing key
       ansible.builtin.assert:
         that:
-          - helm_key_primary_fingerprints | length == 1
-          - helm_key_primary_fingerprints | first == 'DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6'
+          - helm_key_primary_fingerprints | length > 0
+          - helm_key_primary_fingerprints | reject('equalto', 'DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6') | list | length == 0
         fail_msg: >-
           The Helm APT key fingerprint does not match the value published at
           helm.sh/docs/intro/install — potential repository compromise; refusing
