@@ -78,6 +78,10 @@
   ansible.builtin.command:
     argv: [ollama, show, "{{ item }}"]
   environment:
+    # These host-level commands run under Ansible's become context, where HOME
+    # is not guaranteed. Ollama panics instead of reporting a normal error if
+    # it is absent.
+    HOME: /root
     OLLAMA_HOST: "{{ ollama_effective_bind }}:{{ ollama_port }}"
   register: ollama_model_check
   changed_when: false
@@ -90,6 +94,7 @@
   ansible.builtin.command:
     argv: [ollama, pull, "{{ item.item }}"]
   environment:
+    HOME: /root
     OLLAMA_HOST: "{{ ollama_effective_bind }}:{{ ollama_port }}"
   register: ollama_pull
   changed_when: ollama_pull.rc == 0
