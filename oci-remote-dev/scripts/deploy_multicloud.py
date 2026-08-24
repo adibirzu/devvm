@@ -1303,6 +1303,7 @@ class MultiCloudDeployer:
             warn(f"Ansible playbook execution completed with errors: {exc}")
             warn("You can manually troubleshoot and re-run configuration using:")
             warn(f"  {' '.join(ansible_cmd)}")
+            raise
 
     def print_summary(self) -> None:
         print("")
