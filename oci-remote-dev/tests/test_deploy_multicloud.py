@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import shutil
@@ -159,6 +160,21 @@ class TestMultiCloudDeployer(unittest.TestCase):
         MultiCloudDeployer.execute(deployer)
 
         deployer.run_ansible_playbook.assert_not_called()
+
+    def test_post_provisioning_failure_is_propagated(self) -> None:
+        args = MagicMock()
+        args.env_file = str(self.env_file)
+        deployer = MultiCloudDeployer(args)
+        deployer.project_dir = self.project_dir
+        deployer.public_ip = "203.0.113.10"
+        deployer.developers = []
+
+        with patch("scripts.deploy_multicloud.shutil.which", return_value="/usr/bin/ansible-playbook"), patch(
+            "scripts.deploy_multicloud.subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, ["ansible-playbook"]),
+        ):
+            with self.assertRaises(subprocess.CalledProcessError):
+                deployer.run_ansible_playbook()
 
 
 class TestWireGuardClientConfig(unittest.TestCase):
