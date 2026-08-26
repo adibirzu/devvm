@@ -19,15 +19,18 @@
     install_claude_code: true
     install_codex: true
     install_gemini: true
-    # Additional agent CLIs. Default OFF so an existing deployment does not
-    # silently grow new global installs on its next run — opt in per tool via
-    # the matching INSTALL_* env flag (see .env.example and docs/TOOLCHAIN.md).
-    install_opencode: false
-    install_pi: false            # needs Node >= 22 (set NODE_VERSION=22)
-    install_grok: false
-    install_cline: false
-    install_copilot_cli: false   # needs Node >= 22 (set NODE_VERSION=22)
-    install_cursor_agent: false
+    # Additional agent CLIs — all ON by default for a full agentic workspace.
+    # Opt out per tool via the matching INSTALL_* env flag (see .env.example).
+    install_opencode: true
+    install_pi: true             # needs Node >= 22 (set NODE_VERSION=22)
+    install_grok: true
+    install_cline: true
+    install_copilot_cli: true    # needs Node >= 22 (set NODE_VERSION=22)
+    install_cursor_agent: true
+    # Cloud-native developer CLIs
+    install_supabase_cli: true
+    install_firebase_cli: true
+    install_openrouter_cli: true
     # Local LLM serving (Ollama) + wiring for the coding clients.
     install_ollama: false
     ollama_bind_address: ""      # empty = follow wg_server_ip (loopback without --wireguard)
@@ -383,7 +386,7 @@
             name: "opencode-ai"
             global: true
             state: present
-          when: install_opencode | default(false)
+          when: install_opencode | default(true)
 
         - name: Install pi coding agent CLI (needs Node >= 22)
           community.general.npm:
@@ -391,7 +394,7 @@
             global: true
             state: present
           when:
-            - install_pi | default(false)
+            - install_pi | default(true)
             - node_major | int >= 22
 
         - name: Install Cline CLI
@@ -399,7 +402,7 @@
             name: "cline"
             global: true
             state: present
-          when: install_cline | default(false)
+          when: install_cline | default(true)
 
         - name: Install GitHub Copilot CLI (needs Node >= 22)
           community.general.npm:
@@ -407,8 +410,33 @@
             global: true
             state: present
           when:
-            - install_copilot_cli | default(false)
+            - install_copilot_cli | default(true)
             - node_major | int >= 22
+
+        # --- Cloud-native developer CLIs (npm global) ---
+        - name: Install Supabase CLI
+          community.general.npm:
+            name: "supabase"
+            global: true
+            state: present
+          when: install_supabase_cli | default(true)
+          ignore_errors: true
+
+        - name: Install Firebase CLI
+          community.general.npm:
+            name: "firebase-tools"
+            global: true
+            state: present
+          when: install_firebase_cli | default(true)
+          ignore_errors: true
+
+        - name: Install OpenRouter CLI
+          community.general.npm:
+            name: "@openrouter/cli"
+            global: true
+            state: present
+          when: install_openrouter_cli | default(true)
+          ignore_errors: true
 
     - name: Note Node-22-only agent CLIs skipped
       # pi and the Copilot CLI require a newer Node than the one installed; say
@@ -419,10 +447,10 @@
           (@earendil-works/pi-coding-agent) and the GitHub Copilot CLI require
           Node >= 22. Set NODE_VERSION=22 and upgrade Node (a fresh deploy picks
           it up automatically; an existing one needs `apt install nodejs` after
-          the repo switch), then re-run to install the ones you enabled.
+          the repo switch), then re-run to install them.
       when:
         - (node_major | default(0)) | int < 22
-        - (install_pi | default(false)) or (install_copilot_cli | default(false))
+        - (install_pi | default(true)) or (install_copilot_cli | default(true))
 
     - name: Configure local LLM serving (Ollama + client wiring)
       ansible.builtin.include_tasks: ollama_tasks.yml

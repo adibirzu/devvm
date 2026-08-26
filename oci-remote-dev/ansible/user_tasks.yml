@@ -163,7 +163,7 @@
   ansible.builtin.stat:
     path: "/home/{{ dev.name }}/.local/bin/cursor-agent"
   register: cursor_agent_bin
-  when: install_cursor_agent | default(false)
+  when: install_cursor_agent | default(true)
 
 - name: Install the Cursor agent CLI for developer
   ansible.builtin.shell: |
@@ -174,14 +174,14 @@
   environment:
     HOME: "/home/{{ dev.name }}"
   when:
-    - install_cursor_agent | default(false)
+    - install_cursor_agent | default(true)
     - not (cursor_agent_bin.stat.exists | default(false))
 
 - name: Check if the Grok CLI is already installed
   ansible.builtin.stat:
     path: "/home/{{ dev.name }}/.grok/bin/grok"
   register: grok_bin
-  when: install_grok | default(false)
+  when: install_grok | default(true)
 
 - name: Install the Grok CLI (xAI) for developer
   ansible.builtin.shell: |
@@ -192,14 +192,14 @@
   environment:
     HOME: "/home/{{ dev.name }}"
   when:
-    - install_grok | default(false)
+    - install_grok | default(true)
     - not (grok_bin.stat.exists | default(false))
 
 - name: Check whether the Grok CLI is ready
   ansible.builtin.stat:
     path: "/home/{{ dev.name }}/.grok/bin/grok"
   register: grok_bin
-  when: install_grok | default(false)
+  when: install_grok | default(true)
 
 # The Grok installer drops the binary into ~/.grok/bin but does not put that
 # directory on PATH; link it into ~/.local/bin, which every shell here has.
@@ -211,7 +211,7 @@
     force: true
     follow: false
   when:
-    - install_grok | default(false)
+    - install_grok | default(true)
     - grok_bin.stat.exists | default(false)
 
 # Install the OCI Administrator skill pack into each enabled agent harness for
