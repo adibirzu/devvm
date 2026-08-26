@@ -258,14 +258,17 @@ def build_ansible_extra_vars(
         "install_claude_code": env_bool(env, "INSTALL_CLAUDE_CODE", True),
         "install_codex": env_bool(env, "INSTALL_CODEX", True),
         "install_gemini": env_bool(env, "INSTALL_GEMINI", True),
-        # Additional agent CLIs — opt-in (default off) so an existing
-        # deployment never silently grows new global installs.
-        "install_opencode": env_bool(env, "INSTALL_OPENCODE", False),
-        "install_pi": env_bool(env, "INSTALL_PI", False),
-        "install_grok": env_bool(env, "INSTALL_GROK", False),
-        "install_cline": env_bool(env, "INSTALL_CLINE", False),
-        "install_copilot_cli": env_bool(env, "INSTALL_COPILOT_CLI", False),
-        "install_cursor_agent": env_bool(env, "INSTALL_CURSOR_AGENT", False),
+        # Additional agent CLIs — ON by default for a full agentic workspace.
+        "install_opencode": env_bool(env, "INSTALL_OPENCODE", True),
+        "install_pi": env_bool(env, "INSTALL_PI", True),
+        "install_grok": env_bool(env, "INSTALL_GROK", True),
+        "install_cline": env_bool(env, "INSTALL_CLINE", True),
+        "install_copilot_cli": env_bool(env, "INSTALL_COPILOT_CLI", True),
+        "install_cursor_agent": env_bool(env, "INSTALL_CURSOR_AGENT", True),
+        # Cloud-native developer CLIs
+        "install_supabase_cli": env_bool(env, "INSTALL_SUPABASE_CLI", True),
+        "install_firebase_cli": env_bool(env, "INSTALL_FIREBASE_CLI", True),
+        "install_openrouter_cli": env_bool(env, "INSTALL_OPENROUTER_CLI", True),
         # Local LLM serving (Ollama) and the coding-client wiring for it.
         "install_ollama": env_bool(env, "INSTALL_OLLAMA", False),
         "ollama_bind_address": env_get(env, "OLLAMA_BIND_ADDRESS", ""),
