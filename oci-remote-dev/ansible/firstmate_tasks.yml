@@ -1,0 +1,40 @@
+---
+# firstmate_tasks.yml — system-level Firstmate setup (run once, no dev loop).
+#
+# Clones the captain's fork to /opt/firstmate, sets permissions.
+# Per-developer setup (symlink, npm, herdr, treehouse) lives in
+# firstmate_per_user_tasks.yml and is called from the dev loop.
+#
+# Idempotent; safe to re-run.
+
+- name: firstmate | Clone the firstmate repository (captain's fork)
+  ansible.builtin.git:
+    repo: "{{ firstmate_git_url | default('https://github.com/adibirzu/firstmate.git') }}"
+    dest: /opt/firstmate
+    version: "{{ firstmate_git_version | default('main') }}"
+    force: true
+  when: not (firstmate_source_path | default('')) | length > 0
+
+- name: firstmate | Copy from local source path when provided
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/{{ firstmate_source_path }}"
+    dest: /opt/firstmate
+    remote_src: true
+    mode: 'preserve'
+  when: (firstmate_source_path | default('')) | length > 0
+
+- name: firstmate | Ensure /opt/firstmate is group-accessible
+  ansible.builtin.file:
+    path: /opt/firstmate
+    state: directory
+    owner: root
+    group: developers
+    mode: '0775'
+
+- name: firstmate | Ensure bin/ scripts are executable
+  ansible.builtin.file:
+    path: "/opt/firstmate/bin/{{ item }}"
+    mode: '0755'
+  loop:
+    - fm-install-herdr.sh
+    - fm-install-treehouse.sh
