@@ -119,7 +119,7 @@
           IdentitiesOnly yes
 
 - name: Install MultiLLM gateway for developer
-  when: install_multillm_gateway | default(true)
+  when: install_multillm_gateway | default(true) | bool
   ansible.builtin.shell: |
     export PIP_BREAK_SYSTEM_PACKAGES=1
     bash /opt/multillm/install.sh
