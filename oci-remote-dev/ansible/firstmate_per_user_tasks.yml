@@ -1,0 +1,92 @@
+---
+# firstmate_per_user_tasks.yml — per-developer Firstmate setup.
+#
+# Called from playbook.yml inside the developers loop after firstmate_tasks.yml
+# has cloned the repo to /opt/firstmate. Creates the ~/GitHub/firstmate symlink,
+# installs npm packages, herdr, treehouse, and sets up gh auth.
+#
+# Requires `dev` loop variable (name, etc.).
+# Idempotent; safe to re-run.
+
+- name: firstmate | Ensure developer ~/GitHub directory exists
+  ansible.builtin.file:
+    path: "/home/{{ dev.name }}/GitHub"
+    state: directory
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0755'
+
+- name: firstmate | Symlink firstmate repo into developer's ~/GitHub
+  ansible.builtin.file:
+    src: /opt/firstmate
+    dest: "/home/{{ dev.name }}/GitHub/firstmate"
+    state: link
+    force: true
+    follow: false
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+
+# --- npm packages (global, per-user) ---
+- name: firstmate | Install firstmate npm packages
+  community.general.npm:
+    name: "{{ item }}"
+    global: true
+    state: present
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+    PATH: "/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+  loop:
+    - tasks-axi
+    - gh-axi
+    - lavish-axi
+    - chrome-devtools-axi
+    - quota-axi
+  when: install_firstmate_npm | default(true)
+
+# --- Herdr (terminal session backend) ---
+- name: firstmate | Check if Herdr is already installed
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.local/bin/herdr"
+  register: herdr_bin
+  when: install_firstmate_herdr | default(true)
+
+- name: firstmate | Install Herdr via firstmate's pinned installer
+  ansible.builtin.shell: |
+    /opt/firstmate/bin/fm-install-herdr.sh /home/{{ dev.name }}/.local/bin
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+    PATH: "/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+  when:
+    - install_firstmate_herdr | default(true)
+    - not (herdr_bin.stat.exists | default(false))
+
+# --- Treehouse (worktree provider) ---
+- name: firstmate | Check if Treehouse is already installed
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.local/bin/treehouse"
+  register: treehouse_bin
+  when: install_firstmate_treehouse | default(true)
+
+- name: firstmate | Install Treehouse via firstmate's pinned installer
+  ansible.builtin.shell: |
+    /opt/firstmate/bin/fm-install-treehouse.sh /home/{{ dev.name }}/.local/bin
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+    PATH: "/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+  when:
+    - install_firstmate_treehouse | default(true)
+    - not (treehouse_bin.stat.exists | default(false))
+
+# --- gh auth setup for git credential helper ---
+- name: firstmate | Setup gh auth git credential helper
+  ansible.builtin.shell: |
+    gh auth setup-git
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+    PATH: "/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+  when: install_firstmate_gh_auth | default(true)
+  ignore_errors: true

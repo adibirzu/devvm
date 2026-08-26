@@ -63,6 +63,15 @@
     oci_skills_source_path: ""
     oci_skills_git_url: "https://github.com/adibirzu/oci-skills.git"
     oci_skills_git_version: "main"
+    # Firstmate agent distro — crew management for coding agents.
+    install_firstmate: true
+    firstmate_source_path: ""
+    firstmate_git_url: "https://github.com/adibirzu/firstmate.git"
+    firstmate_git_version: "main"
+    install_firstmate_npm: true
+    install_firstmate_herdr: true
+    install_firstmate_treehouse: true
+    install_firstmate_gh_auth: true
     # Host-level layers. A cloud deploy leaves WireGuard to cloud-init; a direct
     # install can opt into it with install_wireguard=true (./install.sh --wireguard).
     install_desktop: true
@@ -328,6 +337,11 @@
       ansible.builtin.include_tasks: agent_os_tasks.yml
       when: install_agent_os | default(true)
 
+    - name: Configure Firstmate (agent distro — crew management for coding agents)
+      ansible.builtin.include_tasks: firstmate_tasks.yml
+      when: install_firstmate | default(true)
+      tags: [firstmate]
+
     - name: Configure user environments
       ansible.builtin.include_tasks: user_tasks.yml
       loop: "{{ developers }}"
@@ -589,6 +603,15 @@
         label: "{{ dev.name }}"
       tags: [oci_skills, user_config]
       when: install_code_server | default(true)
+
+    - name: Configure Firstmate per-developer (symlink, npm, herdr, treehouse)
+      ansible.builtin.include_tasks: firstmate_per_user_tasks.yml
+      loop: "{{ developers }}"
+      loop_control:
+        loop_var: dev
+        label: "{{ dev.name }}"
+      when: install_firstmate | default(true)
+      tags: [firstmate, user_config]
 
     - name: Install landing dashboard page
       block:
