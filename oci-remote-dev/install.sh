@@ -58,6 +58,7 @@ MINIMAL="${DEVVM_MINIMAL:-0}"
 CHECK_MODE="${DEVVM_CHECK:-0}"
 DRY_RUN="${DEVVM_DRY_RUN:-0}"
 SKIP_BOOTSTRAP="${DEVVM_SKIP_BOOTSTRAP:-0}"
+BECOME_PASS="${ANSIBLE_BECOME_PASS:-}"
 PRINT_CONFIG=0
 ADMIN_USER_EXPLICIT=0
 
@@ -403,6 +404,9 @@ build_config_args() {
     if [[ "$MINIMAL" == "1" ]]; then
         CONFIG_ARGS+=(--set install_csp_clis=false --set install_cursor=false --set install_podman=false)
     fi
+    if [[ "${multillm_disabled_by_probe:-0}" == "1" ]]; then
+        CONFIG_ARGS+=(--set install_multillm_gateway=false)
+    fi
 }
 
 render_config() {
@@ -456,7 +460,11 @@ run_ansible() {
 
     # become is declared in the play; only the password handling differs by mode.
     if [[ "$MODE" == "local" && "$SUDO" == "sudo" ]]; then
-        cmd+=(--ask-become-pass)
+        if [[ -z "$BECOME_PASS" ]]; then
+            cmd+=(--ask-become-pass)
+        else
+            cmd+=(-e "ansible_become_pass=$BECOME_PASS")
+        fi
     fi
     cmd+=("$PROJECT_DIR/ansible/playbook.yml")
 
@@ -512,6 +520,20 @@ main() {
 
     [[ "$SKIP_BOOTSTRAP" == "1" ]] || bootstrap_prerequisites
     bootstrap_collections
+
+    # Probe the MultiLLM repo before Ansible tries to clone it: the public
+    # default URL has been 404 before, and a clone failure mid-playbook
+    # aborts the whole run.  Auto-disable when the repo is unreachable.
+    multillm_disabled_by_probe=0
+    if [[ "$MINIMAL" != "1" ]]; then
+        multillm_url="$(env_file_value MULTILLM_GIT_URL "$ENV_PATH" 2>/dev/null \
+                        || echo "https://github.com/adibirzu/multillm.git")"
+        if ! git ls-remote "$multillm_url" -h refs/heads/main >/dev/null 2>&1; then
+            warn "MultiLLM repo not reachable ($multillm_url) — auto-disabling install_multillm_gateway."
+            multillm_disabled_by_probe=1
+        fi
+    fi
+
     render_config
     run_ansible
     print_next_steps
