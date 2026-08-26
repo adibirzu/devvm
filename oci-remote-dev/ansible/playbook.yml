@@ -14,7 +14,7 @@
   hosts: all
   become: true
   vars:
-    node_version: "20"
+    node_version: "22"
     install_cursor: true
     install_claude_code: true
     install_codex: true
@@ -222,7 +222,7 @@
       when: install_cursor and ansible_architecture != 'x86_64'
 
     - name: Provision the MultiLLM gateway source
-      when: install_multillm_gateway | default(true)
+      when: install_multillm_gateway | default(true) | bool
       block:
         # Use a local checkout if the operator has one beside the project (offline /
         # development); otherwise clone the public repo so a fresh deploy works OOTB.
@@ -304,7 +304,7 @@
 
     - name: Configure MultiLLM team usage monitoring (gateway + per-user collectors)
       ansible.builtin.include_tasks: multillm_tasks.yml
-      when: install_multillm_gateway | default(true)
+      when: install_multillm_gateway | default(true) | bool
 
     - name: Configure disconnect-resilience layer (durable agent sessions, mosh, memory palace)
       ansible.builtin.include_tasks: resilience_tasks.yml
@@ -757,7 +757,7 @@
                if (install_desktop | default(true)) else [])
             + ([{'port': multillm_gateway_port | default(8080), 'proto': 'tcp',
                  'from_ip': wg_network | default('10.200.200.0/24')}]
-               if (install_multillm_gateway | default(true)) else [])
+               if (install_multillm_gateway | default(true) | bool) else [])
             + ([{'port': ollama_port | default(11434), 'proto': 'tcp',
                  'from_ip': wg_network | default('10.200.200.0/24')}]
                if (install_ollama | default(false)) else [])

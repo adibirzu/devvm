@@ -251,7 +251,7 @@ def build_ansible_extra_vars(
         "wg_server_ip": env_get(env, "WG_SERVER_IP", "10.200.200.1"),
         "wg_network": env_get(env, "WG_NETWORK", "10.200.200.0/24"),
         "wg_port": env_int(env, "WG_PORT", 51820),
-        "node_version": env_get(env, "NODE_VERSION", "20"),
+        "node_version": env_get(env, "NODE_VERSION", "22"),
         "dashboard_port": env_int(env, "DASHBOARD_PORT", 80),
         "rdp_port": env_int(env, "RDP_PORT", 3389),
         "install_cursor": env_bool(env, "INSTALL_CURSOR", True),
