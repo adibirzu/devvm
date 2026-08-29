@@ -44,6 +44,13 @@ os_container_packages:
   - slirp4netns
   - fuse-overlayfs
 
+# qemu-system-arm ships the aarch64 machine on Ubuntu arm64; qemu-utils gives
+# qemu-img; qemu-efi-aarch64 provides the UEFI firmware for aarch64 guests.
+os_qemu_packages:
+  - qemu-system-arm
+  - qemu-utils
+  - qemu-efi-aarch64
+
 os_desktop_packages:
   - xfce4
   - xfce4-goodies
