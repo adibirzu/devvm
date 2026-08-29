@@ -45,6 +45,13 @@ os_container_packages:
   - slirp4netns
   - fuse-overlayfs
 
+# qemu-kvm covers the machine + accel on EL; edk2-aarch64 is the UEFI firmware
+# for aarch64 guests (AppStream on EL9).
+os_qemu_packages:
+  - qemu-kvm
+  - qemu-img
+  - edk2-aarch64
+
 # RHEL has no `xfce4` meta-package: install the session pieces explicitly.
 os_desktop_packages:
   - xrdp
