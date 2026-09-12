@@ -26,11 +26,15 @@
     install_grok: true
     install_cline: true
     install_copilot_cli: true    # needs Node >= 22 (set NODE_VERSION=22)
+    install_kimi: true           # needs Node >= 22 (set NODE_VERSION=22)
     install_cursor_agent: true
     # Cloud-native developer CLIs
     install_supabase_cli: true
     install_firebase_cli: true
     install_openrouter_cli: true
+    # Ori: OpenRouter's agent harness (`ori claude`, `ori grok`, …). Per-user
+    # vendor installer; wraps the CLIs above with OpenRouter credentials/models.
+    install_ori: true
     # Local LLM serving (Ollama) + wiring for the coding clients.
     install_ollama: false
     ollama_bind_address: ""      # empty = follow wg_server_ip (loopback without --wireguard)
@@ -240,6 +244,8 @@
       block:
         # Use a local checkout if the operator has one beside the project (offline /
         # development); otherwise clone the public repo so a fresh deploy works OOTB.
+        # github.com/adibirzu/multillm currently 404s — a failed clone must not
+        # abort the rest of the toolchain.
         - name: Check for a local MultiLLM checkout on the controller
           ansible.builtin.stat:
             path: "{{ playbook_dir }}/{{ multillm_source_path | default('') }}"
@@ -274,6 +280,22 @@
             group: developers
             mode: '0775'
             recurse: false
+
+        - name: Record MultiLLM source as ready
+          ansible.builtin.set_fact:
+            multillm_ready: true
+      rescue:
+        - name: Note MultiLLM source failed so the gateway can be skipped
+          ansible.builtin.debug:
+            msg: >-
+              MultiLLM source is not at /opt/multillm (clone or local copy failed;
+              github.com/adibirzu/multillm may be unreachable). Skipping the
+              gateway; the rest of the playbook continues. Set
+              INSTALL_MULTILLM_GATEWAY=false or MULTILLM_GIT_URL / MULTILLM_SOURCE_PATH
+              and re-run to retry.
+        - name: Record MultiLLM source as missing
+          ansible.builtin.set_fact:
+            multillm_ready: false
 
     - name: Provision the OCI Administrator skill pack source
       when: install_oci_skills | default(true)
@@ -316,9 +338,25 @@
             mode: '0775'
             recurse: false
 
+        - name: Record oci-skills source as ready
+          ansible.builtin.set_fact:
+            oci_skills_ready: true
+      rescue:
+        - name: Note oci-skills source failed so per-user install can skip
+          ansible.builtin.debug:
+            msg: >-
+              oci-skills source is not at /opt/oci-skills (clone or local copy
+              failed). Skipping the skill pack; the rest of the playbook continues.
+              Set OCI_SKILLS_GIT_URL or OCI_SKILLS_SOURCE_PATH and re-run to retry.
+        - name: Record oci-skills source as missing
+          ansible.builtin.set_fact:
+            oci_skills_ready: false
+
     - name: Configure MultiLLM team usage monitoring (gateway + per-user collectors)
       ansible.builtin.include_tasks: multillm_tasks.yml
-      when: install_multillm_gateway | default(true) | bool
+      when:
+        - install_multillm_gateway | default(true) | bool
+        - multillm_ready | default(false)
 
     - name: Configure disconnect-resilience layer (durable agent sessions, mosh, memory palace)
       ansible.builtin.include_tasks: resilience_tasks.yml
@@ -344,13 +382,6 @@
       when: install_firstmate | default(true)
       tags: [firstmate]
 
-    - name: Configure user environments
-      ansible.builtin.include_tasks: user_tasks.yml
-      loop: "{{ developers }}"
-      loop_control:
-        loop_var: dev
-        label: "{{ dev.name }}"
-      tags: [oci_skills, user_config]
     - name: Install AI CLI agents globally
       block:
         - name: Install Claude Code CLI
@@ -403,6 +434,7 @@
             global: true
             state: present
           when: install_opencode | default(true)
+          ignore_errors: true
 
         - name: Install pi coding agent CLI (needs Node >= 22)
           community.general.npm:
@@ -412,6 +444,7 @@
           when:
             - install_pi | default(true)
             - node_major | int >= 22
+          ignore_errors: true
 
         - name: Install Cline CLI
           community.general.npm:
@@ -419,6 +452,7 @@
             global: true
             state: present
           when: install_cline | default(true)
+          ignore_errors: true
 
         - name: Install GitHub Copilot CLI (needs Node >= 22)
           community.general.npm:
@@ -428,6 +462,17 @@
           when:
             - install_copilot_cli | default(true)
             - node_major | int >= 22
+          ignore_errors: true
+
+        - name: Install Kimi Code CLI (needs Node >= 22)
+          community.general.npm:
+            name: "kimi-code"
+            global: true
+            state: present
+          when:
+            - install_kimi | default(true)
+            - node_major | int >= 22
+          ignore_errors: true
 
         # --- Cloud-native developer CLIs (npm global) ---
         - name: Install Supabase CLI
@@ -455,18 +500,18 @@
           ignore_errors: true
 
     - name: Note Node-22-only agent CLIs skipped
-      # pi and the Copilot CLI require a newer Node than the one installed; say
-      # so instead of failing or silently not installing them.
+      # pi, the Copilot CLI, and Kimi require a newer Node than the one installed;
+      # say so instead of failing or silently not installing them.
       ansible.builtin.debug:
         msg: >-
           Node.js v{{ node_major | default('?') }} is installed but pi
-          (@earendil-works/pi-coding-agent) and the GitHub Copilot CLI require
-          Node >= 22. Set NODE_VERSION=22 and upgrade Node (a fresh deploy picks
-          it up automatically; an existing one needs `apt install nodejs` after
-          the repo switch), then re-run to install them.
+          (@earendil-works/pi-coding-agent), the GitHub Copilot CLI, and Kimi
+          (kimi-code) require Node >= 22. Set NODE_VERSION=22 and upgrade Node
+          (a fresh deploy picks it up automatically; an existing one needs
+          `apt install nodejs` after the repo switch), then re-run to install them.
       when:
         - (node_major | default(0)) | int < 22
-        - (install_pi | default(true)) or (install_copilot_cli | default(true))
+        - (install_pi | default(true)) or (install_copilot_cli | default(true)) or (install_kimi | default(true))
 
     - name: Configure local LLM serving (Ollama + client wiring)
       ansible.builtin.include_tasks: ollama_tasks.yml
@@ -604,7 +649,6 @@
         loop_var: dev
         label: "{{ dev.name }}"
       tags: [oci_skills, user_config]
-      when: install_code_server | default(true)
 
     - name: Configure Firstmate per-developer (symlink, npm, herdr, treehouse)
       ansible.builtin.include_tasks: firstmate_per_user_tasks.yml

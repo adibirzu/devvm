@@ -198,24 +198,85 @@ class TestAnsibleAssets(unittest.TestCase):
                 self.assertEqual(extra[flag], defaults[flag])
 
     def test_agent_tooling_additions_default_off(self) -> None:
-        """Tools added after the original product scope are opt-in: an existing
-        deployment must not grow new global installs on its next run."""
+        """Host-local extras that are not part of the default agentic workspace
+        stay opt-in: an existing deployment must not grow Ollama or Antigravity
+        on its next run. Agent CLIs themselves default ON (see 59be4b9)."""
         devs = build_developers({"ADMIN_USERNAME": "maria"}, require_ssh_key=False)
         extra = build_ansible_extra_vars({}, devs)
         for flag in (
-            "install_opencode",
-            "install_pi",
-            "install_grok",
-            "install_cline",
-            "install_copilot_cli",
-            "install_cursor_agent",
             "install_ollama",
             "install_antigravity",
         ):
             self.assertFalse(
                 extra[flag],
-                f"{flag} defaults to True — new tooling must be opt-in",
+                f"{flag} defaults to True — new host-local extras must be opt-in",
             )
+
+    def test_optional_agent_cli_installs_do_not_abort_the_play(self) -> None:
+        """A failed vendor download or npm 404 must not stop the rest of the
+        toolchain from installing. Core infra stays strict; optional CLIs use
+        ignore_errors."""
+        playbook = (ANSIBLE / "playbook.yml").read_text(encoding="utf-8")
+        user_tasks = (ANSIBLE / "user_tasks.yml").read_text(encoding="utf-8")
+        firstmate_user = (ANSIBLE / "firstmate_per_user_tasks.yml").read_text(
+            encoding="utf-8"
+        )
+        for name in (
+            "Install OpenCode CLI",
+            "Install pi coding agent CLI",
+            "Install Cline CLI",
+            "Install GitHub Copilot CLI",
+            "Install Kimi Code CLI",
+            "Install OpenRouter CLI",
+        ):
+            idx = playbook.index(name)
+            window = playbook[idx : idx + 700]
+            self.assertIn(
+                "ignore_errors: true",
+                window,
+                f"{name} is missing ignore_errors — a failure would abort the play",
+            )
+        for name in (
+            "Install the Grok CLI",
+            "Install the Cursor agent CLI",
+            "Install Ori (OpenRouter harness)",
+            "Install code-server via script",
+        ):
+            idx = user_tasks.index(name)
+            window = user_tasks[idx : idx + 700]
+            self.assertIn(
+                "ignore_errors: true",
+                window,
+                f"{name} is missing ignore_errors — a failure would abort the play",
+            )
+        self.assertIn("https://openrouter.ai/labs/ori/install.sh", user_tasks)
+        self.assertNotIn(".local/share/pipx/venvs/kimi-code", user_tasks)
+        self.assertIn("ignore_errors: true", firstmate_user)
+        self.assertIn("NPM_CONFIG_PREFIX", firstmate_user)
+        # Unreachable git sources (multillm currently 404s) must rescue, not abort.
+        clone = playbook.index("Clone MultiLLM from GitHub")
+        self.assertIn("rescue:", playbook[clone : clone + 2500])
+        skills = playbook.index("Clone oci-skills from GitHub")
+        self.assertIn("rescue:", playbook[skills : skills + 2500])
+
+    def test_firstmate_and_ori_flags_flow_through_the_compiler(self) -> None:
+        extra = build_ansible_extra_vars({}, build_developers(
+            {"ADMIN_USERNAME": "maria"}, require_ssh_key=False
+        ))
+        for flag in (
+            "install_kimi",
+            "install_ori",
+            "install_firstmate",
+            "install_firstmate_npm",
+            "install_firstmate_herdr",
+            "install_firstmate_treehouse",
+            "install_firstmate_gh_auth",
+        ):
+            self.assertTrue(extra[flag], f"{flag} should default on")
+        self.assertEqual(
+            extra["firstmate_git_url"],
+            "https://github.com/adibirzu/firstmate.git",
+        )
 
 class TestConfigCompiler(unittest.TestCase):
     def test_missing_key_path_yields_no_key(self) -> None:

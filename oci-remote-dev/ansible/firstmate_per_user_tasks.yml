@@ -3,10 +3,32 @@
 #
 # Called from playbook.yml inside the developers loop after firstmate_tasks.yml
 # has cloned the repo to /opt/firstmate. Creates the ~/GitHub/firstmate symlink,
-# installs npm packages, herdr, treehouse, and sets up gh auth.
+# installs npm packages, herdr, treehouse, no-mistakes, and sets up gh auth.
 #
 # Requires `dev` loop variable (name, etc.).
+# Optional vendor/npm steps never abort the playbook: a missing package or a
+# failed herdr download is logged and the rest of the developer loop continues.
 # Idempotent; safe to re-run.
+#
+# Stat the tree here (do not rely on firstmate_tasks.yml's fact): apply_changes.yml
+# is a separate play and would otherwise skip this file even when /opt/firstmate
+# already exists from the original deploy.
+
+- name: firstmate | Check the cloned tree
+  ansible.builtin.stat:
+    path: /opt/firstmate
+  register: firstmate_tree_per_user
+
+- name: firstmate | Record whether the tree is ready
+  ansible.builtin.set_fact:
+    firstmate_ready: "{{ (firstmate_tree_per_user.stat.exists | default(false)) and (firstmate_tree_per_user.stat.isdir | default(false)) }}"
+
+- name: firstmate | Skip per-developer setup when the tree is missing
+  ansible.builtin.debug:
+    msg: >-
+      Skipping Firstmate setup for {{ dev.name }} because /opt/firstmate is not
+      present. The rest of this developer's provisioning continues.
+  when: not (firstmate_ready | default(false))
 
 - name: firstmate | Ensure developer ~/GitHub directory exists
   ansible.builtin.file:
@@ -15,6 +37,7 @@
     owner: "{{ dev.name }}"
     group: "{{ dev.name }}"
     mode: '0755'
+  when: firstmate_ready | default(false)
 
 - name: firstmate | Symlink firstmate repo into developer's ~/GitHub
   ansible.builtin.file:
@@ -25,8 +48,32 @@
     follow: false
     owner: "{{ dev.name }}"
     group: "{{ dev.name }}"
+  when: firstmate_ready | default(false)
 
-# --- npm packages (global, per-user) ---
+- name: firstmate | Put Firstmate helpers and the per-user npm prefix on PATH
+  ansible.builtin.blockinfile:
+    path: "/home/{{ dev.name }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED — firstmate PATH"
+    create: true
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0644'
+    block: |
+      export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/GitHub/firstmate/bin:$PATH"
+  when: firstmate_ready | default(false)
+
+# --- npm packages (global, per-user writable prefix) ---
+- name: firstmate | Ensure a user-writable npm prefix
+  ansible.builtin.file:
+    path: "/home/{{ dev.name }}/.npm-global"
+    state: directory
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0755'
+  when:
+    - firstmate_ready | default(false)
+    - install_firstmate_npm | default(true)
+
 - name: firstmate | Install firstmate npm packages
   community.general.npm:
     name: "{{ item }}"
@@ -35,21 +82,41 @@
   become_user: "{{ dev.name }}"
   environment:
     HOME: "/home/{{ dev.name }}"
-    PATH: "/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    NPM_CONFIG_PREFIX: "/home/{{ dev.name }}/.npm-global"
+    PATH: "/home/{{ dev.name }}/.npm-global/bin:/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
   loop:
     - tasks-axi
     - gh-axi
     - lavish-axi
     - chrome-devtools-axi
     - quota-axi
-  when: install_firstmate_npm | default(true)
+  when:
+    - firstmate_ready | default(false)
+    - install_firstmate_npm | default(true)
+  ignore_errors: true
+
+- name: firstmate | Run axi setup hooks when the CLIs landed
+  ansible.builtin.shell: |
+    command -v gh-axi >/dev/null 2>&1 && gh-axi setup hooks || true
+    command -v lavish-axi >/dev/null 2>&1 && lavish-axi setup hooks || true
+    command -v chrome-devtools-axi >/dev/null 2>&1 && chrome-devtools-axi setup hooks || true
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+    PATH: "/home/{{ dev.name }}/.npm-global/bin:/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+  when:
+    - firstmate_ready | default(false)
+    - install_firstmate_npm | default(true)
+  ignore_errors: true
 
 # --- Herdr (terminal session backend) ---
 - name: firstmate | Check if Herdr is already installed
   ansible.builtin.stat:
     path: "/home/{{ dev.name }}/.local/bin/herdr"
   register: herdr_bin
-  when: install_firstmate_herdr | default(true)
+  when:
+    - firstmate_ready | default(false)
+    - install_firstmate_herdr | default(true)
 
 - name: firstmate | Install Herdr via firstmate's pinned installer
   ansible.builtin.shell: |
@@ -59,15 +126,19 @@
     HOME: "/home/{{ dev.name }}"
     PATH: "/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
   when:
+    - firstmate_ready | default(false)
     - install_firstmate_herdr | default(true)
     - not (herdr_bin.stat.exists | default(false))
+  ignore_errors: true
 
 # --- Treehouse (worktree provider) ---
 - name: firstmate | Check if Treehouse is already installed
   ansible.builtin.stat:
     path: "/home/{{ dev.name }}/.local/bin/treehouse"
   register: treehouse_bin
-  when: install_firstmate_treehouse | default(true)
+  when:
+    - firstmate_ready | default(false)
+    - install_firstmate_treehouse | default(true)
 
 - name: firstmate | Install Treehouse via firstmate's pinned installer
   ansible.builtin.shell: |
@@ -77,8 +148,31 @@
     HOME: "/home/{{ dev.name }}"
     PATH: "/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
   when:
+    - firstmate_ready | default(false)
     - install_firstmate_treehouse | default(true)
     - not (treehouse_bin.stat.exists | default(false))
+  ignore_errors: true
+
+# --- no-mistakes (required firstmate bootstrap tool) ---
+- name: firstmate | Check if no-mistakes is already installed
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.local/bin/no-mistakes"
+  register: no_mistakes_bin
+  when: firstmate_ready | default(false)
+
+- name: firstmate | Install no-mistakes
+  ansible.builtin.shell: |
+    curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh
+  args:
+    creates: "/home/{{ dev.name }}/.local/bin/no-mistakes"
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+    PATH: "/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+  when:
+    - firstmate_ready | default(false)
+    - not (no_mistakes_bin.stat.exists | default(false))
+  ignore_errors: true
 
 # --- gh auth setup for git credential helper ---
 - name: firstmate | Setup gh auth git credential helper
@@ -88,5 +182,7 @@
   environment:
     HOME: "/home/{{ dev.name }}"
     PATH: "/home/{{ dev.name }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
-  when: install_firstmate_gh_auth | default(true)
+  when:
+    - firstmate_ready | default(false)
+    - install_firstmate_gh_auth | default(true)
   ignore_errors: true

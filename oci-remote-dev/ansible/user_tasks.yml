@@ -53,6 +53,13 @@
     creates: "/home/{{ dev.name }}/.local/bin/code-server"
   become_user: "{{ dev.name }}"
   when: install_code_server and not (code_server_bin.stat.exists | default(false))
+  ignore_errors: true
+
+- name: Check whether code-server is ready
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.local/bin/code-server"
+  register: code_server_bin
+  when: install_code_server
 
 - name: Configure code-server port
   ansible.builtin.copy:
@@ -152,6 +159,7 @@
   when:
     - install_antigravity | default(false)
     - not (agy_bin.stat.exists | default(false))
+  ignore_errors: true
 
 - name: Check whether the Antigravity CLI is ready
   ansible.builtin.stat:
@@ -176,6 +184,7 @@
   when:
     - install_cursor_agent | default(true)
     - not (cursor_agent_bin.stat.exists | default(false))
+  ignore_errors: true
 
 - name: Check if the Grok CLI is already installed
   ansible.builtin.stat:
@@ -194,6 +203,7 @@
   when:
     - install_grok | default(true)
     - not (grok_bin.stat.exists | default(false))
+  ignore_errors: true
 
 - name: Check whether the Grok CLI is ready
   ansible.builtin.stat:
@@ -214,6 +224,87 @@
     - install_grok | default(true)
     - grok_bin.stat.exists | default(false)
 
+# Kimi Code CLI is installed globally via npm; the package's bin is `kimi`
+# (not `kimi-code`). Link the real binary onto ~/.local/bin so firstmate's
+# harness detection finds it. A missing global install must not abort the
+# playbook — and must never plant a broken pipx-path symlink that would
+# shadow a working `kimi` later on PATH.
+- name: Locate the globally installed Kimi CLI
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /usr/local/bin/kimi
+    - /usr/bin/kimi
+  register: kimi_global
+  when:
+    - install_kimi | default(true)
+    - node_major | default(0) | int >= 22
+
+- name: Link the Kimi CLI onto the developer's PATH as kimi
+  ansible.builtin.file:
+    src: "{{ (kimi_global.results | selectattr('stat.exists') | list | first).stat.path }}"
+    dest: "/home/{{ dev.name }}/.local/bin/kimi"
+    state: link
+    force: true
+    follow: false
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+  when:
+    - install_kimi | default(true)
+    - node_major | default(0) | int >= 22
+    - (kimi_global.results | default([]) | selectattr('stat.exists') | list | length) > 0
+
+# Ori is OpenRouter's agent harness: `ori claude`, `ori grok`, `ori opencode`,
+# `ori pi`, `ori codex` wrap the real CLIs with OpenRouter credentials and
+# models. Firstmate is not a verified Ori adapter; Ori sits on PATH so a
+# captain (or firstmate primary) can launch those wrapped CLIs, and so
+# fm-openrouter-quota.sh can read OPENROUTER_API_KEY_TOKENS from the shell.
+- name: Check if Ori (OpenRouter harness) is already installed
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.local/bin/ori"
+  register: ori_bin
+  when: install_ori | default(true)
+
+- name: Install Ori (OpenRouter harness) for developer
+  ansible.builtin.shell: |
+    curl -fsSL --proto '=https' https://openrouter.ai/labs/ori/install.sh | bash
+  args:
+    creates: "/home/{{ dev.name }}/.local/bin/ori"
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+    ORI_INSTALL_DIR: "/home/{{ dev.name }}/.local/bin"
+    ORI_TELEMETRY: "0"
+  when:
+    - install_ori | default(true)
+    - not (ori_bin.stat.exists | default(false))
+  ignore_errors: true
+
+- name: Check whether Ori is ready
+  ansible.builtin.stat:
+    path: "/home/{{ dev.name }}/.local/bin/ori"
+  register: ori_bin
+  when: install_ori | default(true)
+
+- name: Wire the developer shell to Ori and Firstmate's OpenRouter quota reader
+  ansible.builtin.blockinfile:
+    path: "/home/{{ dev.name }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED — OpenRouter Ori harness"
+    create: true
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0644'
+    block: |
+      # Ori wraps claude/codex/grok/opencode/pi with OpenRouter credentials and models.
+      # Usage: ori claude | ori grok | ori opencode | ori pi | ori codex
+      # Firstmate quota reader (bin/fm-openrouter-quota.sh) uses OPENROUTER_API_KEY_TOKENS.
+      # Drop a key at ~/.config/openrouter/api_key (chmod 600); never commit it.
+      if [ -f "$HOME/.config/openrouter/api_key" ]; then
+        export OPENROUTER_API_KEY_TOKENS="$(tr -d '\n' < "$HOME/.config/openrouter/api_key")"
+        export OPENROUTER_API_KEY="$OPENROUTER_API_KEY_TOKENS"
+      fi
+  when: install_ori | default(true)
+
 # Install the OCI Administrator skill pack into each enabled agent harness for
 # this developer (Claude Code, Codex, Gemini CLI, Antigravity). install.sh is
 # idempotent and only reads /opt/oci-skills, writing into the user's own
@@ -224,7 +315,9 @@
 # failed vendor download can never leave a skills directory for a harness that
 # is not there.
 - name: Install OCI Administrator skill pack for developer
-  when: install_oci_skills | default(true)
+  when:
+    - install_oci_skills | default(true)
+    - oci_skills_ready | default(true)
   tags: [oci_skills]
   become_user: "{{ dev.name }}"
   vars:
@@ -264,6 +357,7 @@
     PY
   register: notify_hook
   changed_when: "'added' in notify_hook.stdout"
+  ignore_errors: true
 
 - name: Register guardrail PreToolUse hook (blocks destructive tool calls)
   become_user: "{{ dev.name }}"
@@ -294,6 +388,7 @@
     PY
   register: guardrail_hook
   changed_when: "'added' in guardrail_hook.stdout"
+  ignore_errors: true
 
 - name: Generate ~/.claude/.mcp.json from the approved MCP registry
   become_user: "{{ dev.name }}"
@@ -304,6 +399,7 @@
     MULTILLM_GATEWAY_PORT: "{{ multillm_gateway_port | default(8080) }}"
   register: mcp_apply
   changed_when: "'applied' in mcp_apply.stdout"
+  ignore_errors: true
 
 # Local-LLM wiring (opt-in via INSTALL_OLLAMA): point the developer's shell at
 # the shared Ollama server without hijacking their cloud-authenticated CLIs.
