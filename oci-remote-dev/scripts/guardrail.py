@@ -246,6 +246,14 @@ def load_policy(path: str = POLICY_FILE) -> Dict[str, Any]:
                     "allowed_write_roots", DEFAULT_POLICY["allowed_write_roots"]
                 )
                 data.setdefault("secret_writes", DEFAULT_POLICY["secret_writes"])
+                existing_ids = {
+                    rule.get("id")
+                    for rule in data["rules"]
+                    if isinstance(rule, dict)
+                }
+                for rule in DEFAULT_POLICY["rules"]:
+                    if rule.get("id") not in existing_ids:
+                        data["rules"].append(rule)
                 return data
         except (json.JSONDecodeError, OSError):
             pass
