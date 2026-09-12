@@ -1,0 +1,52 @@
+---
+# Per-developer Portless-style port broker. This role is entirely opt-in via
+# INSTALL_DEVPORT and is included through developer_account_tasks.yml so runtime
+# account additions receive the same setup as initial provisioning.
+
+- name: Devport | Install the dependency-free CLI for {{ dev.name }}
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/devport.py"
+    dest: "/home/{{ dev.name }}/.local/bin/devport"
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0755'
+
+- name: Devport | Create per-user configuration directory
+  ansible.builtin.file:
+    path: "/home/{{ dev.name }}/.config/devport"
+    state: directory
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0700'
+
+- name: Devport | Configure the reserved range and reachable URL host
+  ansible.builtin.copy:
+    dest: "/home/{{ dev.name }}/.config/devport/config.json"
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0600'
+    content: |
+      {
+        "range_start": {{ dev.devport_range_start }},
+        "range_end": {{ dev.devport_range_end }},
+        "url_host": {{ wg_server_ip | to_json }}
+      }
+
+- name: Devport | Install the shell helper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/devport.sh"
+    dest: "/home/{{ dev.name }}/.config/devport/shell.sh"
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0644'
+
+- name: Devport | Load the shell helper for interactive Bash sessions
+  ansible.builtin.blockinfile:
+    path: "/home/{{ dev.name }}/.bashrc"
+    marker: "# {mark} ANSIBLE MANAGED — devport helper"
+    create: true
+    owner: "{{ dev.name }}"
+    group: "{{ dev.name }}"
+    mode: '0644'
+    block: |
+      source "$HOME/.config/devport/shell.sh"
