@@ -1,11 +1,14 @@
+import copy
 import hashlib
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from scripts.guardrail import DEFAULT_POLICY, decide
+from scripts.guardrail import DEFAULT_POLICY, decide, load_policy
 
 CTX = {"home": "/home/adi"}
 
@@ -290,6 +293,52 @@ class TestSecretWritePlaceholders(unittest.TestCase):
             content="def foo():\n    return 42\n",
         )
         self.assertEqual(a, "allow")
+
+
+class TestLoadPolicyMigration(unittest.TestCase):
+    """An already-provisioned host's on-disk policy.json predates a new
+    DEFAULT_POLICY rule — load_policy() must merge it in by id rather than
+    leaving the host stuck on the stale rule set forever."""
+
+    def _write_policy(self, rules) -> str:
+        fh = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        )
+        json.dump({"rules": rules}, fh)
+        fh.close()
+        self.addCleanup(lambda: Path(fh.name).unlink(missing_ok=True))
+        return fh.name
+
+    def test_missing_rule_is_appended(self) -> None:
+        stale_rules = [
+            r
+            for r in copy.deepcopy(DEFAULT_POLICY["rules"])
+            if r["id"] != "secret-write-detected"
+        ]
+        path = self._write_policy(stale_rules)
+        policy = load_policy(path)
+        ids = [r["id"] for r in policy["rules"]]
+        self.assertIn("secret-write-detected", ids)
+        self.assertEqual(len(ids), len(stale_rules) + 1)
+
+        action, _, rid = decide(
+            "Write",
+            {"file_path": "/tmp/x.env", "content": "TOKEN=hunter2222"},
+            CTX,
+            policy,
+        )
+        self.assertEqual(action, "ask")
+        self.assertTrue(rid.startswith("secret-write-detected:"))
+
+    def test_operator_customized_rule_is_not_overwritten(self) -> None:
+        rules = copy.deepcopy(DEFAULT_POLICY["rules"])
+        for rule in rules:
+            if rule["id"] == "secret-write-detected":
+                rule["reason"] = "Operator override — always deny."
+        rules_before = copy.deepcopy(rules)
+        path = self._write_policy(rules)
+        policy = load_policy(path)
+        self.assertEqual(policy["rules"], rules_before)
 
 
 if __name__ == "__main__":
