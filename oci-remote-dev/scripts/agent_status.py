@@ -300,9 +300,7 @@ def fetch_harness_costs(gateway: str, hours: int = 24) -> Dict[str, float]:
     costs: Dict[str, float] = {}
     for row in data.get("by_harness", []) or []:
         harness = normalize_harness(row.get("harness"))
-        costs[harness] = costs.get(harness, 0.0) + float(
-            row.get("cost_usd") or 0.0
-        )
+        costs[harness] = costs.get(harness, 0.0) + float(row.get("cost_usd") or 0.0)
     return costs
 
 
@@ -398,7 +396,13 @@ def build(
     health = fetch_gateway_health(gateway)
     budgets_spec = _load_budgets_spec()
     board = build_with(
-        per_user, live, costs, notifs, guardrail, health, budgets_spec,
+        per_user,
+        live,
+        costs,
+        notifs,
+        guardrail,
+        health,
+        budgets_spec,
         harness_costs,
     )
     return board
