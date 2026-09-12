@@ -42,6 +42,11 @@
   ansible.builtin.include_tasks: user_tasks.yml
   tags: [oci_skills, user_config]
 
+- name: Configure collision-free preview ports for {{ dev.name }}
+  ansible.builtin.include_tasks: devport_tasks.yml
+  when: install_devport | default(false)
+  tags: [devport, user_config]
+
 - name: Enable and start code-server for {{ dev.name }}
   ansible.builtin.systemd:
     name: "code-server@{{ dev.name }}"

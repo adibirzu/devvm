@@ -367,6 +367,45 @@ context rm <id>
 
 ---
 
+## 🔌 Collision-free preview servers (`devport`, opt-in)
+
+Set `INSTALL_DEVPORT=true` before provisioning to give every developer a
+non-overlapping 100-port range and a dependency-free broker in
+`~/.local/bin/devport`. Claims are stable by name, persisted in the developer's
+own `~/.local/state/devport/claims.json`, and exposed by the host firewall only
+to the configured WireGuard network. Because this project intentionally has no
+in-tunnel DNS, `DEV_URL` uses the configured WireGuard server IP (or `127.0.0.1`
+on a default direct install) instead of inventing a hostname.
+
+Before a Firstmate crewmate starts a preview server, run this from its worktree:
+
+```bash
+source ~/.config/devport/shell.sh   # automatic in interactive Bash after install
+devport-use                         # claims by worktree; exports PORT and DEV_URL
+npm run dev -- --host 0.0.0.0 --port "$PORT"   # Vite and similar CLIs
+# or: uvicorn app:app                         # reads UVICORN_HOST/UVICORN_PORT
+# or: flask run                               # reads FLASK_RUN_HOST/FLASK_RUN_PORT
+```
+
+`devport-use` prints the stable private URL the crewmate should report back.
+Next.js reads `PORT` directly; CLI flags are shown for tools such as Vite that
+do not. The helper also exports `HOST`, `VITE_PORT`, `UVICORN_*`, and
+`FLASK_RUN_*`. This is private HTTP over WireGuard, not an HTTPS secure context.
+
+The underlying CLI is script-friendly:
+
+```bash
+devport claim my-preview     # print stable URL
+devport list                 # name, port, URL
+devport release my-preview   # make the port reusable
+eval "$(devport env my-preview)"  # helper-free shell integration
+```
+
+Use a distinct claim name for any second server in the same worktree. Releasing
+a claim does not stop its process; stop the server first, then release it.
+
+---
+
 ## 🛟 Durable Agent Sessions & Disconnect Resilience
 
 Coding agents run **on the VM in detached tmux sessions**, decoupled from your
@@ -633,6 +672,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | Ori (OpenRouter harness) + OpenRouter CLI | ✅ Implemented |
 | Firstmate agent distro (symlink, axi CLIs, Herdr, Treehouse) | ✅ Implemented |
 | Opt-in Playwright Chromium + Xvfb browser verification | ✅ Implemented |
+| Opt-in per-worktree preview-port broker (`devport`) | ✅ Implemented |
 | OCI Administrator skill pack (`oci-skills`) installed into enabled harnesses | ✅ Implemented |
 | Shared MultiLLM gateway service + `/dashboard` over VPN | ✅ Implemented |
 | Per-user MultiLLM hooks, launchers, MCP registration | ✅ Implemented |

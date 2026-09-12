@@ -82,6 +82,8 @@
     install_firstmate_herdr: true
     install_firstmate_treehouse: true
     install_firstmate_gh_auth: true
+    # Portless-style, per-worktree preview-port broker. New layer: opt-in.
+    install_devport: false
     # Host-level layers. A cloud deploy leaves WireGuard to cloud-init; a direct
     # install can opt into it with install_wireguard=true (./install.sh --wireguard).
     install_desktop: true
@@ -870,6 +872,13 @@
             + ([{'port': control_plane_port | default(8082), 'proto': 'tcp',
                  'from_ip': wg_network | default('10.200.200.0/24')}]
                if (install_agent_os | default(true)) else [])
+            + ([{'port': ((developers | map(attribute='devport_range_start') | min | string)
+                          ~ ':' ~
+                          (developers | map(attribute='devport_range_end') | max | string)),
+                 'proto': 'tcp',
+                 'from_ip': wg_network | default('10.200.200.0/24')}]
+               if ((install_devport | default(false)) and (developers | length > 0))
+               else [])
             + ([{'port': '60000:61000', 'proto': 'udp',
                  'from_ip': wg_network | default('10.200.200.0/24')}]
                if (install_resilience_layer | default(true)) else [])

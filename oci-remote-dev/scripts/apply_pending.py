@@ -55,11 +55,13 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 try:  # run as a script: scripts/ is on sys.path
     from control_plane import validate_developer_name, validate_developer_request
+    from deploy_config import assign_devport_range
 except ImportError:  # imported as scripts.apply_pending (tests, tooling)
     from scripts.control_plane import (  # type: ignore[no-redef]
         validate_developer_name,
         validate_developer_request,
     )
+    from scripts.deploy_config import assign_devport_range  # type: ignore[no-redef]
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 QUEUE_FILE = Path("/etc/agent-os/pending-changes.jsonl")
@@ -70,6 +72,8 @@ INVENTORY_FILE = PROJECT_DIR / "configs" / "hosts.ini"
 
 DEFAULT_CODE_SERVER_PORT = 8443
 DEFAULT_WG_NETWORK = "10.200.200.0/24"
+DEFAULT_DEVPORT_START = 12000
+DEFAULT_DEVPORT_RANGE_SIZE = 100
 _IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
 
 # Statuses that retire an entry from the queue. Anything else (i.e. "failed")
@@ -192,6 +196,9 @@ def developer_vars(
     gh_user = str(change.get("github_user") or name)
     port = change.get("code_server_port")
     wg_ip = change.get("wg_ip")
+    devport_start, devport_end = assign_devport_range(
+        name, existing, DEFAULT_DEVPORT_RANGE_SIZE, DEFAULT_DEVPORT_START
+    )
     return {
         "name": name,
         "ssh_key": str(change.get("ssh_key") or ""),
@@ -204,6 +211,8 @@ def developer_vars(
             change.get("git_email") or f"{gh_user}@users.noreply.github.com"
         ),
         "github_user": gh_user,
+        "devport_range_start": devport_start,
+        "devport_range_end": devport_end,
     }
 
 
@@ -264,7 +273,12 @@ def plan_changes(
         if action["status"] != "ready":
             continue
         if action["op"] == "add":
-            dev = developer_vars(action["change"], roster, network)
+            try:
+                dev = developer_vars(action["change"], roster, network)
+            except ValueError as exc:
+                action["status"] = "rejected"
+                action["reason"] = str(exc)
+                continue
             action["dev"] = dev
             roster = [d for d in roster if d.get("name") != dev["name"]] + [dev]
         else:
