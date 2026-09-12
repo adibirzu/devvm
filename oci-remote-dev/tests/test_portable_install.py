@@ -215,9 +215,7 @@ class TestAnsibleAssets(unittest.TestCase):
         """Every install_* toggle in the playbook must be compiled by
         deploy_config.build_ansible_extra_vars, and vice versa — otherwise one
         surface silently drifts from the other."""
-        playbook_flags = {
-            k for k in self._playbook_vars() if k.startswith("install_")
-        }
+        playbook_flags = {k for k in self._playbook_vars() if k.startswith("install_")}
         devs = build_developers({"ADMIN_USERNAME": "maria"}, require_ssh_key=False)
         extra = build_ansible_extra_vars({}, devs)
         config_flags = {k for k in extra if k.startswith("install_")}
@@ -333,9 +331,9 @@ class TestAnsibleAssets(unittest.TestCase):
         self.assertIn("rescue:", playbook[skills : skills + 2500])
 
     def test_firstmate_and_ori_flags_flow_through_the_compiler(self) -> None:
-        extra = build_ansible_extra_vars({}, build_developers(
-            {"ADMIN_USERNAME": "maria"}, require_ssh_key=False
-        ))
+        extra = build_ansible_extra_vars(
+            {}, build_developers({"ADMIN_USERNAME": "maria"}, require_ssh_key=False)
+        )
         for flag in (
             "install_kimi",
             "install_ori",
@@ -350,6 +348,7 @@ class TestAnsibleAssets(unittest.TestCase):
             extra["firstmate_git_url"],
             "https://github.com/adibirzu/firstmate.git",
         )
+
 
 class TestConfigCompiler(unittest.TestCase):
     def test_missing_key_path_yields_no_key(self) -> None:
@@ -441,15 +440,17 @@ class TestConfigCompiler(unittest.TestCase):
             },
             require_ssh_key=False,
         )
-        compiled = build_ansible_extra_vars(
-            {}, devs, existing_developers=existing
-        )["developers"]
+        compiled = build_ansible_extra_vars({}, devs, existing_developers=existing)[
+            "developers"
+        ]
         self.assertEqual(
             [(d["devport_range_start"], d["devport_range_end"]) for d in compiled],
             [(12000, 12099), (12300, 12399)],
         )
 
-    def test_a_genuinely_new_developer_gets_a_range_past_every_existing_one(self) -> None:
+    def test_a_genuinely_new_developer_gets_a_range_past_every_existing_one(
+        self,
+    ) -> None:
         existing = [
             {"name": "maria", "devport_range_start": 12000, "devport_range_end": 12099},
             {"name": "alice", "devport_range_start": 12300, "devport_range_end": 12399},
@@ -463,9 +464,9 @@ class TestConfigCompiler(unittest.TestCase):
             },
             require_ssh_key=False,
         )
-        compiled = build_ansible_extra_vars(
-            {}, devs, existing_developers=existing
-        )["developers"]
+        compiled = build_ansible_extra_vars({}, devs, existing_developers=existing)[
+            "developers"
+        ]
         self.assertEqual(
             (compiled[2]["devport_range_start"], compiled[2]["devport_range_end"]),
             (12400, 12499),
