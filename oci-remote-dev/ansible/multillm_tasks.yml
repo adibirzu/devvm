@@ -3,9 +3,15 @@
 # ------------------------------------------------------------------------------
 # Installs the MultiLLM gateway as a system service and a per-developer usage
 # collector. The collector runs *as each developer* on a timer, reads that
-# developer's local AI-CLI stats (~/.claude, ~/.codex, ~/.gemini) and pushes a
-# daily snapshot to the gateway. The gateway aggregates per-user / per-account
-# usage and serves a team dashboard at http://<wg_server_ip>:<port>/team.
+# developer's local AI-CLI stats and pushes a daily snapshot to the gateway.
+# Covered harnesses (canonical list in docs/COST-TRACKING.md): claude, codex,
+# gemini, opencode, pi (+pi-signed), grok, kimi, cursor, cursor-agent, muse,
+# agy, cline, copilot, aider. The collector reads each CLI's home-directory
+# stats for the invoking user; harnesses without a parseable local stat store
+# contribute sessions (via agentctl) but no cost until the gateway learns
+# their format.
+# The gateway aggregates per-user / per-account / per-harness usage and serves
+# a team dashboard at http://<wg_server_ip>:<port>/team.
 #
 # Reachable only over the WireGuard VPN (UFW restricts the port to the WG
 # subnet). No prompt content is ever collected — token counts and a best-effort

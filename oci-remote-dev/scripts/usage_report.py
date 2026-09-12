@@ -10,6 +10,12 @@ Attribution note: the shared gateway resolves its project tag once at startup
 (``MULTILLM_PROJECT``), so the per-project breakdown is only as granular as the
 gateway's configuration. True per-developer attribution requires per-user
 gateways or a per-request project header — see ROADMAP-v2.md, Phase 1.
+
+Harness note: the LiteLLM gateways (adi1/adi2) track the client ``User-Agent``
+as a spend-log tag automatically (LiteLLM >= 1.73), which gives per-coding-tool
+cost — see docs/COST-TRACKING.md. The MultiLLM gateway exposes the same
+dimension as an optional ``by_harness`` section on ``/api/team-usage``; this
+CLI renders it when present and stays silent when the gateway predates it.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -55,6 +62,50 @@ def fetch_team_usage(
     if tenant:
         query += f"&tenant={urllib.parse.quote(tenant)}"
     return _fetch_json(base_url.rstrip("/") + query, timeout)
+
+
+# Canonical coding-harness names (firstmate spawn list + the extra CLIs devvm
+# provisions). Mirrored in scripts/agent_status.py — each CLI installs
+# standalone to /usr/local/bin, so the list is duplicated, not imported.
+HARNESS_NAMES = (
+    "claude",
+    "codex",
+    "gemini",
+    "opencode",
+    "pi",
+    "pi-signed",
+    "grok",
+    "kimi",
+    "cursor",
+    "cursor-agent",
+    "muse",
+    "agy",
+    "cline",
+    "copilot",
+    "aider",
+)
+
+
+def normalize_harness(value: Any) -> str:
+    """Map a raw harness/User-Agent value to its canonical name.
+
+    Tokenizes on non-alphanumeric separators so ``claude-cli/1.0`` →
+    ``claude`` while ``copilot`` does not collapse to ``pi``; hyphenated
+    names (``cursor-agent``, ``pi-signed``) match as whole tokens first.
+    Unknown values become ``"other"``. Pure function, safe to unit-test.
+    """
+    text = str(value or "").strip().lower()
+    if not text:
+        return "other"
+    dashed = text.replace("_", "-")
+    for name in ("cursor-agent", "pi-signed"):
+        if name in re.split(r"[^a-z0-9-]+", dashed):
+            return name
+    tokens = set(re.split(r"[^a-z0-9]+", text))
+    for name in HARNESS_NAMES:
+        if name in tokens:
+            return name
+    return "other"
 
 
 def _num(value: Any) -> float:
@@ -204,6 +255,27 @@ def render_budget_report(
     )
 
 
+def format_harness_table(by_harness: List[Dict[str, Any]]) -> str:
+    """Per-coding-harness cost table (LiteLLM User-Agent dimension equivalent).
+
+    Rows carry ``harness`` (canonical name, see normalize_harness),
+    ``requests``, ``input_tokens``, ``output_tokens`` and ``cost_usd``.
+    """
+    if not by_harness:
+        return "  (no per-harness usage in window)"
+    header = f"  {'HARNESS':<20} {'REQ':>7} {'IN':>12} {'OUT':>12} {'COST':>12}"
+    lines = [header, "  " + "-" * (len(header) - 2)]
+    for row in by_harness:
+        lines.append(
+            f"  {normalize_harness(row.get('harness'))[:20]:<20} "
+            f"{_fmt_int(row.get('requests')):>7} "
+            f"{_fmt_int(row.get('input_tokens')):>12} "
+            f"{_fmt_int(row.get('output_tokens')):>12} "
+            f"{_fmt_cost(row.get('cost_usd')):>12}"
+        )
+    return "\n".join(lines)
+
+
 def format_user_table(by_user: List[Dict[str, Any]]) -> str:
     if not by_user:
         return "  (no developer usage in window)"
@@ -223,23 +295,32 @@ def format_user_table(by_user: List[Dict[str, Any]]) -> str:
 
 def render_team_report(data: Dict[str, Any], hours: int) -> str:
     by_user = data.get("by_user") or []
+    by_harness = data.get("by_harness") or []
     totals = data.get("totals") or {}
-    return "\n".join(
-        [
-            f"MultiLLM team usage — last {hours}h",
-            "=" * 60,
-            "By developer (tenant):",
-            format_user_table(by_user),
+    sections = [
+        f"MultiLLM team usage — last {hours}h",
+        "=" * 60,
+        "By developer (tenant):",
+        format_user_table(by_user),
+        "",
+    ]
+    # by_harness is optional — gateways predating harness tracking omit it.
+    if by_harness:
+        sections += [
+            "By coding harness (User-Agent equivalent):",
+            format_harness_table(by_harness),
             "",
-            "Totals:",
-            f"  developers={_fmt_int(totals.get('users'))}  "
-            f"accounts={_fmt_int(totals.get('accounts'))}  "
-            f"requests={_fmt_int(totals.get('requests'))}  "
-            f"in={_fmt_int(totals.get('input_tokens'))}  "
-            f"out={_fmt_int(totals.get('output_tokens'))}  "
-            f"cost={_fmt_cost(totals.get('cost_usd'))}",
         ]
-    )
+    sections += [
+        "Totals:",
+        f"  developers={_fmt_int(totals.get('users'))}  "
+        f"accounts={_fmt_int(totals.get('accounts'))}  "
+        f"requests={_fmt_int(totals.get('requests'))}  "
+        f"in={_fmt_int(totals.get('input_tokens'))}  "
+        f"out={_fmt_int(totals.get('output_tokens'))}  "
+        f"cost={_fmt_cost(totals.get('cost_usd'))}",
+    ]
+    return "\n".join(sections)
 
 
 def render_report(data: Dict[str, Any], hours: int) -> str:
@@ -285,6 +366,11 @@ def main(argv: List[str] | None = None) -> int:
         "--tenant", default="", help="Filter team mode to a single developer"
     )
     parser.add_argument(
+        "--harness",
+        default="",
+        help="Filter team mode to a single coding harness (e.g. claude, codex)",
+    )
+    parser.add_argument(
         "--budgets",
         action="store_true",
         help="Flag developers over their daily cap (exit 2 if any breach)",
@@ -303,6 +389,13 @@ def main(argv: List[str] | None = None) -> int:
     try:
         if use_team:
             data = fetch_team_usage(args.gateway, args.hours, args.tenant)
+            if args.harness:
+                want = normalize_harness(args.harness)
+                data["by_harness"] = [
+                    r
+                    for r in (data.get("by_harness") or [])
+                    if normalize_harness(r.get("harness")) == want
+                ]
         else:
             data = fetch_usage(args.gateway, args.hours, args.project)
     except urllib.error.URLError as exc:
