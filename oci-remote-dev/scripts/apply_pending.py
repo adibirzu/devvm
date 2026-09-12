@@ -221,7 +221,7 @@ def developer_vars(
         )
         devport_end = devport_start + DEFAULT_DEVPORT_RANGE_SIZE - 1
     if devport_end > 65535:
-        raise ValueError("no per-developer devport range remains")
+        raise ValueError(f"no per-developer devport range remains below 65535 for {name!r}")
     return {
         "name": name,
         "ssh_key": str(change.get("ssh_key") or ""),
@@ -296,7 +296,12 @@ def plan_changes(
         if action["status"] != "ready":
             continue
         if action["op"] == "add":
-            dev = developer_vars(action["change"], roster, network)
+            try:
+                dev = developer_vars(action["change"], roster, network)
+            except ValueError as exc:
+                action["status"] = "rejected"
+                action["reason"] = str(exc)
+                continue
             action["dev"] = dev
             roster = [d for d in roster if d.get("name") != dev["name"]] + [dev]
         else:
