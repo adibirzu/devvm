@@ -48,6 +48,10 @@
     install_podman: true
     # Opt-in virtualization tooling (qemu + UEFI firmware for aarch64 guests).
     install_qemu: false
+    # Browser verification is intentionally opt-in: it downloads a pinned
+    # Playwright Chromium build and its Ubuntu runtime dependencies.
+    install_browser_testing: false
+    playwright_version: "1.63.0"
     install_dev_tools: true
     install_github_cli: true
     install_csp_clis: true
@@ -512,6 +516,11 @@
       when:
         - (node_major | default(0)) | int < 22
         - (install_pi | default(true)) or (install_copilot_cli | default(true)) or (install_kimi | default(true))
+
+    - name: Configure browser testing (Playwright Chromium + Xvfb)
+      ansible.builtin.include_tasks: browser_testing_tasks.yml
+      when: install_browser_testing | default(false)
+      tags: [browser_testing]
 
     - name: Configure local LLM serving (Ollama + client wiring)
       ansible.builtin.include_tasks: ollama_tasks.yml
