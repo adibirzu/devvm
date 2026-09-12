@@ -1,0 +1,10 @@
+version: 2
+secret:
+  # The authoritative leak gate is oci-remote-dev/scripts/security_gate.py (run in CI).
+  # This config keeps GitGuardian's PR scan in sync with the existing gitleaks
+  # allowlist (see .gitleaks.toml): oci-remote-dev/tests/ intentionally contains
+  # synthetic secret-shaped fixtures (fake API keys, PEM blocks, dotenv values)
+  # used to assert that the guardrail's secret-content detector catches them —
+  # they are not real, leaked credentials.
+  ignored_paths:
+    - "oci-remote-dev/tests/**"

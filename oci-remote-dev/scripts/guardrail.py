@@ -14,18 +14,133 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 POLICY_FILE = os.environ.get("GUARDRAIL_POLICY", "/etc/agent-os/policy.json")
 
+# --- Content-aware secret detection (independent of write-target path) ---
+# A path being "safe" (home/shared/tmp) says nothing about whether the bytes
+# written there are a secret. These patterns classify write *content* into a
+# small set of pattern classes; the value itself is never surfaced in a
+# decision reason or audit entry — only the class name and the target path.
+_PLACEHOLDER_VALUE_RE = re.compile(
+    r"^(<.*>|\.\.\.|changeme|change_me|change-me|dummy|example|test|sample|"
+    r"todo|fixme|replace[_-]?me|your[_-].*|xxx+|placeholder|insert[_-].*|"
+    r"redacted|fake|none|null|n/?a|\$\{.*\}|\$\w+)$",
+    re.IGNORECASE,
+)
+
+_SECRET_KEY_NAME = (
+    r"[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_KEY)[A-Z0-9_]*"
+)
+
+#  Anchored on a line/word boundary rather than a whole line, so this matches
+#  both real dotenv-file lines (KEY=VALUE) and a KEY=VALUE assignment embedded
+#  in a larger string (e.g. `echo "KEY=VALUE" > file`, JSON, YAML).
+_DOTENV_ASSIGNMENT_RE = re.compile(
+    rf"(?:^|[\s'\"])(?:export[ \t]+)?({_SECRET_KEY_NAME})[ \t]*=[ \t]*['\"]?([^\s'\";]+)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+_JSON_SECRET_FIELD_RE = re.compile(
+    r'"(private_key|client_secret)"\s*:\s*"([^"]*)"', re.IGNORECASE
+)
+
+_PEM_BLOCK_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
+
+# A write via Bash: redirection (`>`, `>>`), a heredoc (`<<EOF`, `<<-EOF`, `<<'EOF'`),
+# or a pipe into `tee`.
+_BASH_WRITE_INDICATOR_RE = re.compile(r"(?:>{1,2}(?!>)|<<[-~]?|\btee\b)")
+_BASH_REDIRECT_TARGET_RE = re.compile(
+    r"(?:>{1,2}(?!>)|\btee\b(?:\s+-a)?)\s+(['\"]?)([^\s'\"|;&]+)\1"
+)
+
+HIGH_ENTROPY_MIN_LEN = 20
+HIGH_ENTROPY_MIN_BITS = 3.5
+
+
+def _shannon_entropy(value: str) -> float:
+    if not value:
+        return 0.0
+    counts = Counter(value)
+    length = len(value)
+    return -sum((n / length) * math.log2(n / length) for n in counts.values())
+
+
+def _is_placeholder_value(value: str) -> bool:
+    v = value.strip().strip("'\"")
+    if not v:
+        return True
+    return bool(_PLACEHOLDER_VALUE_RE.match(v))
+
+
+def classify_secret_content(text: str, target_path: str = "") -> Optional[str]:
+    """Classify write `text` into a secret pattern class, or None if it's clean.
+
+    Never returns the matched value — only the pattern class name — so callers
+    can log/report the classification without leaking the secret itself.
+    """
+    if not text:
+        return None
+    if target_path and os.path.basename(target_path) == ".env.example":
+        return None
+    if _PEM_BLOCK_RE.search(text):
+        return "pem-block"
+    for m in _JSON_SECRET_FIELD_RE.finditer(text):
+        if not _is_placeholder_value(m.group(2)):
+            return "json-secret-field"
+    for m in _DOTENV_ASSIGNMENT_RE.finditer(text):
+        value = m.group(2)
+        if _is_placeholder_value(value):
+            continue
+        if (
+            len(value) >= HIGH_ENTROPY_MIN_LEN
+            and _shannon_entropy(value) >= HIGH_ENTROPY_MIN_BITS
+        ):
+            return "high-entropy-key-value"
+        return "dotenv-assignment"
+    return None
+
+
+def _extract_write_content(tool: str, tool_input: Dict[str, Any]) -> Tuple[str, str]:
+    """Return (content_being_written, target_path) for a tool call, or ("", "")."""
+    if tool == "Write":
+        return str(tool_input.get("content", "") or ""), _extract_path(tool_input)
+    if tool == "Edit":
+        return str(tool_input.get("new_string", "") or ""), _extract_path(tool_input)
+    if tool == "MultiEdit":
+        edits = tool_input.get("edits", []) or []
+        content = "\n".join(
+            str(e.get("new_string", "") or "") for e in edits if isinstance(e, dict)
+        )
+        return content, _extract_path(tool_input)
+    if tool == "NotebookEdit":
+        return str(tool_input.get("new_source", "") or ""), _extract_path(tool_input)
+    if tool == "Bash":
+        command = _extract_command(tool_input)
+        if not command or not _BASH_WRITE_INDICATOR_RE.search(command):
+            return "", ""
+        target = ""
+        for m in _BASH_REDIRECT_TARGET_RE.finditer(command):
+            target = m.group(2)  # last redirection target wins (e.g. a pipe to tee)
+        return command, target
+    return "", ""
+
+
 # Default policy — conservative but practical. Ordered; first match wins.
 # action: deny (block), ask (require user confirmation), allow.
 DEFAULT_POLICY: Dict[str, Any] = {
     "allowed_write_roots": ["~", "/opt/shared-dev", "/tmp"],
+    # secret_writes: "deny" | "ask" — verdict when write content/target looks
+    # secret-shaped (see classify_secret_content). Default "ask" preserves the
+    # existing behavior of confirming rather than silently blocking.
+    "secret_writes": "ask",
     "rules": [
         # --- Catastrophic shell: hard deny ---
         {
@@ -85,6 +200,20 @@ DEFAULT_POLICY: Dict[str, Any] = {
             "command_regex": r"\bsudo\b.*\b(apt|apt-get|dnf|yum)\b\s+(install|remove|purge)|\bpip\d?\s+install\b.*\s-g\b|npm\s+install\s+-g\b",
             "reason": "System-wide install/removal — confirm before running.",
         },
+        # --- Secret-shaped write content: verdict from the secret_writes knob ---
+        # Path-based rules (below/secret-read) treat home/shared/tmp — and even a
+        # path that merely isn't named `.env` — as safe by path alone; this rule
+        # catches secret VALUES landing anywhere, including those roots, and takes
+        # precedence over secret-read so a write gets the more specific classification.
+        {
+            "id": "secret-write-detected",
+            "tool": "Write,Edit,MultiEdit,NotebookEdit,Bash",
+            "secret_write_check": True,
+            "reason": (
+                "Write content looks secret-shaped ({pattern_class}) — refusing to "
+                "write a plaintext secret. Tune with the 'secret_writes' policy knob."
+            ),
+        },
         # --- Secret access: ask ---
         {
             "id": "secret-read",
@@ -116,6 +245,13 @@ def load_policy(path: str = POLICY_FILE) -> Dict[str, Any]:
                 data.setdefault(
                     "allowed_write_roots", DEFAULT_POLICY["allowed_write_roots"]
                 )
+                data.setdefault("secret_writes", DEFAULT_POLICY["secret_writes"])
+                existing_ids = {
+                    rule.get("id") for rule in data["rules"] if isinstance(rule, dict)
+                }
+                for rule in DEFAULT_POLICY["rules"]:
+                    if rule.get("id") not in existing_ids:
+                        data["rules"].append(rule)
                 return data
         except (json.JSONDecodeError, OSError):
             pass
@@ -175,6 +311,22 @@ def decide(
     for rule in policy.get("rules", []):
         if not _tool_matches(rule.get("tool", "*"), tool):
             continue
+        if rule.get("secret_write_check"):
+            content, target = _extract_write_content(tool, tool_input)
+            pattern_class = classify_secret_content(content, target)
+            if not pattern_class:
+                continue
+            action = policy.get("secret_writes", "ask")
+            if action not in ("ask", "deny"):
+                continue
+            reason = rule.get("reason", "Secret-shaped write content detected.").format(
+                pattern_class=pattern_class
+            )
+            return (
+                action,
+                reason,
+                f"{rule.get('id', 'secret-write-detected')}:{pattern_class}:{target}",
+            )
         if "command_regex" in rule:
             if not command or not re.search(
                 rule["command_regex"], command, re.IGNORECASE
