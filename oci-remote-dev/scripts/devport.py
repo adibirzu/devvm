@@ -62,10 +62,23 @@ def validate_name(name: str) -> str:
 def allocate_port(
     name: str, claims: dict[str, int], start: int, end: int
 ) -> tuple[int, bool]:
-    """Return a stable existing claim or allocate the first usable free port."""
+    """Return a stable existing claim or allocate the first usable free port.
+
+    A claim outside the currently configured [start, end] range is stale —
+    the host's devport range was reconfigured since the claim was made, so
+    that port is no longer inside the firewall rule for this range — and is
+    re-allocated instead of trusted as-is.
+    """
     validate_name(name)
     if name in claims:
-        return int(claims[name]), False
+        port = int(claims[name])
+        if start <= port <= end:
+            return port, False
+        print(
+            f"devport: {name}'s claim on port {port} is outside the configured "
+            f"range {start}-{end}; re-allocating",
+            file=sys.stderr,
+        )
     claimed = {int(port) for port in claims.values()}
     for port in range(start, end + 1):
         if port not in claimed and port_is_free(port):
