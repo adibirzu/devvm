@@ -148,6 +148,13 @@ sees them. The hook is the correct (and only) enforcement point, and it's per-us
   with a data-driven default policy (`/etc/agent-os/policy.json`). Denies catastrophic
   shell + force-push-to-protected; asks for cloud/cluster/db mutations, system installs,
   secret access, and out-of-root writes. Audit-logged; deny/ask ring the board.
+- ✅ **Content-aware write protection** — a home/shared/tmp path is no longer treated
+  as safe by path alone: `guardrail.classify_secret_content` inspects `Write`/`Edit`/
+  `MultiEdit`/`NotebookEdit` content and `Bash` redirection/heredoc writes for
+  dotenv-style secret assignments, JSON `private_key`/`client_secret` fields, PEM
+  blocks, and high-entropy key values, exempting placeholders and `.env.example`.
+  Verdict comes from the `secret_writes` policy knob (`ask` default, or `deny`);
+  audit entries record the path and pattern class, never the value.
 - ✅ **MCP tool registry** (`registry.json` + `mcp-registry`) — generates each user's
   `~/.claude/.mcp.json` (merge-safe: preserves personal servers, removes disabled ones).
 - ✅ **OCI read-only MCP server** (`oci_mcp_server.py`) — stdio JSON-RPC; list/get only,
