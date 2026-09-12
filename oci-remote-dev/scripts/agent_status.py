@@ -16,6 +16,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -24,6 +25,47 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 NOTIFY_WINDOW_SEC = 600  # a notification "rings" for 10 minutes, then fades
+
+
+# Canonical coding-harness names (firstmate spawn list + the extra CLIs devvm
+# provisions). Duplicated from scripts/usage_report.py — each CLI installs
+# standalone to /usr/local/bin, so the list is copied, not imported.
+HARNESS_NAMES = (
+    "claude",
+    "codex",
+    "gemini",
+    "opencode",
+    "pi",
+    "pi-signed",
+    "grok",
+    "kimi",
+    "cursor",
+    "cursor-agent",
+    "muse",
+    "agy",
+    "cline",
+    "copilot",
+    "aider",
+)
+
+
+def normalize_harness(value: object) -> str:
+    """Map a raw harness name to its canonical form (see usage_report).
+
+    Duplicated for standalone installs. Unknown values become ``"other"``.
+    """
+    text = str(value or "").strip().lower()
+    if not text:
+        return "other"
+    dashed = text.replace("_", "-")
+    for name in ("cursor-agent", "pi-signed"):
+        if name in re.split(r"[^a-z0-9-]+", dashed):
+            return name
+    tokens = set(re.split(r"[^a-z0-9]+", text))
+    for name in HARNESS_NAMES:
+        if name in tokens:
+            return name
+    return "other"
 
 
 def _parse_iso(ts: str) -> float:
@@ -156,13 +198,19 @@ def merge_board(
     per_user: {username: [session-meta, ...]}
     live:     {username: {sanitized_session_name: attached_flag}}
     costs:    {username: cost_usd_24h}
+
+    Also aggregates live sessions per coding harness (the agentctl ``agent``
+    field, normalized) into ``by_harness`` — the board's engagement view per
+    tool, mirroring LiteLLM's per-User-Agent metrics (see docs/COST-TRACKING.md).
     """
     developers = []
     totals = {"sessions": 0, "running": 0, "cost_usd": 0.0}
+    by_harness: Dict[str, Dict[str, int]] = {}
     for user in sorted(per_user):
         rows = []
         for meta in per_user[user]:
             st = state_from_live(meta["name"], live.get(user, {}))
+            harness = normalize_harness(meta.get("agent", "?"))
             rows.append(
                 {
                     "name": meta.get("name", "?"),
@@ -176,12 +224,16 @@ def merge_board(
             totals["sessions"] += 1
             if st in ("running", "attached"):
                 totals["running"] += 1
+            bucket = by_harness.setdefault(harness, {"sessions": 0, "running": 0})
+            bucket["sessions"] += 1
+            if st in ("running", "attached"):
+                bucket["running"] += 1
         cost = float(costs.get(user, 0.0) or 0.0)
         totals["cost_usd"] += cost
         developers.append(
             {"name": user, "sessions": rows, "cost_usd_24h": round(cost, 4)}
         )
-    return {"developers": developers, "totals": totals}
+    return {"developers": developers, "totals": totals, "by_harness": by_harness}
 
 
 # ── Thin best-effort IO (not unit-tested) ────────────────────────────────────
@@ -230,6 +282,27 @@ def fetch_costs(gateway: str, hours: int = 24) -> Dict[str, float]:
         bucket = row.get("bucket")
         if bucket:
             costs[bucket] = float(row.get("cost_usd") or 0.0)
+    return costs
+
+
+def fetch_harness_costs(gateway: str, hours: int = 24) -> Dict[str, float]:
+    """Per-harness cost from /api/team-usage ``by_harness`` (when served).
+
+    Best-effort; {} when the gateway predates harness tracking or is down.
+    Keys are canonical harness names (see normalize_harness).
+    """
+    try:
+        url = gateway.rstrip("/") + f"/api/team-usage?hours={hours}"
+        with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310
+            data = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, json.JSONDecodeError):
+        return {}
+    costs: Dict[str, float] = {}
+    for row in data.get("by_harness", []) or []:
+        harness = normalize_harness(row.get("harness"))
+        costs[harness] = costs.get(harness, 0.0) + float(
+            row.get("cost_usd") or 0.0
+        )
     return costs
 
 
@@ -314,6 +387,7 @@ def build(
         per_user[user] = parse_meta_dir(agentctl / "meta")
         live[user] = live_sessions_for(user, str(agentctl / "tmux.sock"))
     costs = fetch_costs(gateway) if gateway else {}
+    harness_costs = fetch_harness_costs(gateway) if gateway else {}
     now_epoch = datetime.datetime.now(datetime.timezone.utc).timestamp()
     notifs = _read_feed(
         home_root, developers, now_epoch, "notifications.jsonl", recent_notifications
@@ -323,7 +397,11 @@ def build(
     )
     health = fetch_gateway_health(gateway)
     budgets_spec = _load_budgets_spec()
-    return build_with(per_user, live, costs, notifs, guardrail, health, budgets_spec)
+    board = build_with(
+        per_user, live, costs, notifs, guardrail, health, budgets_spec,
+        harness_costs,
+    )
+    return board
 
 
 def _load_budgets_spec() -> str:
@@ -342,7 +420,14 @@ def _load_budgets_spec() -> str:
 
 
 def build_with(
-    per_user, live, costs, notifs=None, guardrail=None, health=None, budgets_spec=""
+    per_user,
+    live,
+    costs,
+    notifs=None,
+    guardrail=None,
+    health=None,
+    budgets_spec="",
+    harness_costs=None,
 ) -> Dict[str, Any]:
     board = merge_board(per_user, live, costs)
     ringing = apply_notifications(board["developers"], notifs or {})
@@ -353,6 +438,13 @@ def build_with(
     board["totals"]["over_budget"] = evaluate_budget_status(
         board["developers"], budgets_spec
     )
+    # Join gateway per-harness cost into the engagement buckets when served;
+    # missing keys stay cost-free (gateway predates harness tracking).
+    costs_by_harness = harness_costs or {}
+    for harness, bucket in (board.get("by_harness") or {}).items():
+        if harness in costs_by_harness:
+            bucket["cost_usd"] = round(float(costs_by_harness[harness]), 4)
+    board["harness_costs"] = dict(costs_by_harness)
     return board
 
 
