@@ -439,7 +439,31 @@ fork bombs, `shutdown`, force-push to `main`), **asks** for cloud/cluster mutati
 system installs, secret-file access, and writes outside home/shared/tmp — and allows
 everything else. Edit `/etc/agent-os/policy.json` to tune. Every decision is
 audit-logged; deny/ask also fire the notification ring and show on the board's
-🛡️ Guardrail panel.
+🛡️ Guardrail panel. A new devvm release can add default rules after a host's
+policy.json already exists — `load_policy()` merges any rule id missing from
+the on-disk file in at the next hook invocation, appending it without touching
+existing (including operator-edited) rules.
+
+#### Content-aware write protection
+
+A path being under home/shared/tmp says nothing about whether the *bytes*
+written there are a secret — an agent can happily `echo` a real API key into a
+scratch file under `/tmp`. The guardrail also inspects the content of every
+`Write`/`Edit`/`MultiEdit`/`NotebookEdit` call and any `Bash` redirection or
+heredoc (`> file`, `>> file`, `<<EOF`, `tee file`) for secret-shaped content,
+independent of the target path:
+
+- dotenv-style assignments to a `KEY`/`TOKEN`/`SECRET`/`PASSWORD`/`PRIVATE_KEY`-named
+  variable with a non-placeholder value (`dotenv-assignment`, or
+  `high-entropy-key-value` when the value is long and high-entropy)
+- JSON `"private_key"` / `"client_secret"` fields (`json-secret-field`)
+- PEM key blocks (`pem-block`)
+
+Placeholders (`<...>`, `changeme`, `dummy`, `example`, etc.) and any write to a
+`.env.example` file are exempt — they never trigger this rule. When it does
+match, the verdict comes from the **`secret_writes`** policy knob — `"ask"`
+(default) or `"deny"` — and both the decision reason and the audit entry record
+only the target path and the matched pattern class, **never the value**.
 
 ### Central MCP tool registry
 One approved-servers source (`/opt/agent-os/registry.json`) generates each developer's
