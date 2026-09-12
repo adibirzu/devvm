@@ -379,7 +379,10 @@ fork bombs, `shutdown`, force-push to `main`), **asks** for cloud/cluster mutati
 system installs, secret-file access, and writes outside home/shared/tmp — and allows
 everything else. Edit `/etc/agent-os/policy.json` to tune. Every decision is
 audit-logged; deny/ask also fire the notification ring and show on the board's
-🛡️ Guardrail panel.
+🛡️ Guardrail panel. A new devvm release can add default rules after a host's
+policy.json already exists — `load_policy()` merges any rule id missing from
+the on-disk file in at the next hook invocation, appending it without touching
+existing (including operator-edited) rules.
 
 #### Content-aware write protection
 
