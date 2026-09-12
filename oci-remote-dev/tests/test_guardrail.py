@@ -172,6 +172,21 @@ class TestSecretWriteContent(unittest.TestCase):
         self.assertEqual(a, "ask")
         self.assertTrue(rid.startswith("secret-write-detected:pem-block"))
 
+    def test_notebook_edit_secret_cell(self) -> None:
+        a, _, rid = d(
+            "NotebookEdit",
+            notebook_path="/home/adi/project/analysis.ipynb",
+            new_source="API_TOKEN=abc123secret",
+        )
+        self.assertEqual(a, "ask")
+        self.assertTrue(rid.startswith("secret-write-detected:dotenv-assignment"))
+
+    def test_bash_pipe_tee_write(self) -> None:
+        command = 'echo "API_KEY=abcdefghij1234567890ZZ" | tee /tmp/creds.env'
+        a, _, rid = d("Bash", command=command)
+        self.assertEqual(a, "ask")
+        self.assertTrue(rid.startswith("secret-write-detected:"))
+
     def test_bash_heredoc_write(self) -> None:
         command = (
             "cat <<'EOF' > /tmp/secrets.env\nAPI_KEY=abcdefghij1234567890ZZ\nEOF\n"

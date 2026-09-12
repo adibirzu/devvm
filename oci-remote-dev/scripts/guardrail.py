@@ -54,8 +54,9 @@ _JSON_SECRET_FIELD_RE = re.compile(
 
 _PEM_BLOCK_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
 
-# A write via Bash: redirection (`>`, `>>`) or a heredoc (`<<EOF`, `<<-EOF`, `<<'EOF'`).
-_BASH_WRITE_INDICATOR_RE = re.compile(r"(?:>{1,2}(?!>)|<<[-~]?)")
+# A write via Bash: redirection (`>`, `>>`), a heredoc (`<<EOF`, `<<-EOF`, `<<'EOF'`),
+# or a pipe into `tee`.
+_BASH_WRITE_INDICATOR_RE = re.compile(r"(?:>{1,2}(?!>)|<<[-~]?|\btee\b)")
 _BASH_REDIRECT_TARGET_RE = re.compile(
     r"(?:>{1,2}(?!>)|\btee\b(?:\s+-a)?)\s+(['\"]?)([^\s'\"|;&]+)\1"
 )
