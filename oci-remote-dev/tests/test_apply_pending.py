@@ -47,7 +47,13 @@ GOOD_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAExample carlos@mac"
 
 
 def add(name="carlos", **kw):
-    return {"op": "add", "name": name, "ssh_key": GOOD_KEY, "ts": "2026-01-01T00:00:00Z", **kw}
+    return {
+        "op": "add",
+        "name": name,
+        "ssh_key": GOOD_KEY,
+        "ts": "2026-01-01T00:00:00Z",
+        **kw,
+    }
 
 
 def remove(name="carlos", **kw):
@@ -91,7 +97,9 @@ class TestValidation(unittest.TestCase):
 
     def test_add_null_optionals_are_fine(self) -> None:
         # The control-plane enqueues explicit nulls for omitted fields.
-        ok, _ = validate_change(add(wg_ip=None, code_server_port=None, github_user=None))
+        ok, _ = validate_change(
+            add(wg_ip=None, code_server_port=None, github_user=None)
+        )
         self.assertTrue(ok)
 
     def test_remove_ok(self) -> None:
@@ -118,7 +126,9 @@ class TestQueueParsing(unittest.TestCase):
         self.assertEqual(malformed, [])
 
     def test_malformed_lines_are_isolated(self) -> None:
-        entries, malformed = parse_queue("{not json\n" + json.dumps(add()) + "\n[1,2]\n")
+        entries, malformed = parse_queue(
+            "{not json\n" + json.dumps(add()) + "\n[1,2]\n"
+        )
         self.assertEqual(len(entries), 1)
         self.assertEqual(len(malformed), 2)
 
@@ -133,7 +143,9 @@ class TestQueueParsing(unittest.TestCase):
         self.assertEqual(lines, [json.dumps(entry)])
 
     def test_change_id_is_stable_and_content_addressed(self) -> None:
-        self.assertEqual(change_id(add()), change_id(dict(reversed(list(add().items())))))
+        self.assertEqual(
+            change_id(add()), change_id(dict(reversed(list(add().items()))))
+        )
         self.assertNotEqual(change_id(add()), change_id(add(name="royce")))
 
     def test_applied_ids_only_counts_terminal_statuses(self) -> None:
@@ -295,7 +307,9 @@ class TestPlanning(unittest.TestCase):
         self.assertEqual(actions[1]["dev"]["code_server_port"], 8443)
         self.assertEqual(actions[1]["dev"]["wg_ip"], "10.200.200.2")
 
-    def test_devport_range_exhaustion_is_rejected_without_crashing_the_batch(self) -> None:
+    def test_devport_range_exhaustion_is_rejected_without_crashing_the_batch(
+        self,
+    ) -> None:
         # "zeno" already holds the last possible /100 range below 65535; a
         # re-add of "zeno" reuses that range fine, but a new developer with no
         # existing allocation has nowhere left to go and must be rejected —
@@ -312,14 +326,19 @@ class TestPlanning(unittest.TestCase):
         actions = plan_changes([add("zeno"), add("carlos")], existing=existing)
         self.assertEqual(actions[0]["status"], "ready")
         self.assertEqual(
-            (actions[0]["dev"]["devport_range_start"], actions[0]["dev"]["devport_range_end"]),
+            (
+                actions[0]["dev"]["devport_range_start"],
+                actions[0]["dev"]["devport_range_end"],
+            ),
             (65436, 65535),
         )
         self.assertEqual(actions[1]["status"], "rejected")
         self.assertIn("devport", actions[1]["reason"])
         self.assertNotIn("dev", actions[1])
 
-    def test_a_runtime_add_then_a_full_redeploy_agree_on_the_devport_range(self) -> None:
+    def test_a_runtime_add_then_a_full_redeploy_agree_on_the_devport_range(
+        self,
+    ) -> None:
         # apply_pending (runtime add) and deploy_config (full redeploy) must
         # never disagree on a developer's devport range for the same roster —
         # they share one range-assignment helper precisely to guarantee this.
@@ -400,7 +419,9 @@ class TestAnsibleBoundary(unittest.TestCase):
 
     def test_ansible_command_is_exact(self) -> None:
         self.assertEqual(
-            ansible_command("/tmp/v.json", "ansible/apply_changes.yml", "configs/hosts.ini"),
+            ansible_command(
+                "/tmp/v.json", "ansible/apply_changes.yml", "configs/hosts.ini"
+            ),
             [
                 "ansible-playbook",
                 "-i",
@@ -455,7 +476,9 @@ class TestExecution(unittest.TestCase):
 
     def test_one_failure_does_not_block_the_rest_of_the_batch(self) -> None:
         runner, calls = fake_runner(
-            rc=lambda ev: 5 if ev["apply_add"] and ev["apply_add"][0]["name"] == "carlos" else 0
+            rc=lambda ev: (
+                5 if ev["apply_add"] and ev["apply_add"][0]["name"] == "carlos" else 0
+            )
         )
         carlos, royce = add("carlos"), add("royce")
         actions = execute_plan(plan_changes([carlos, royce]), runner)
@@ -491,8 +514,12 @@ class TestExecution(unittest.TestCase):
 
     def test_rejected_and_superseded_entries_leave_the_queue(self) -> None:
         runner, calls = fake_runner(0)
-        actions = execute_plan(plan_changes([add(), remove(), add(ssh_key="x")]), runner)
-        self.assertEqual([a["status"] for a in actions], ["superseded", "applied", "rejected"])
+        actions = execute_plan(
+            plan_changes([add(), remove(), add(ssh_key="x")]), runner
+        )
+        self.assertEqual(
+            [a["status"] for a in actions], ["superseded", "applied", "rejected"]
+        )
         self.assertEqual(remaining_queue(actions), [])
         self.assertEqual(len(calls), 1)
 
@@ -518,8 +545,12 @@ class TestExecution(unittest.TestCase):
 
     def test_summarize_counts_statuses(self) -> None:
         runner, _ = fake_runner(0)
-        actions = execute_plan(plan_changes([add(), remove(), add(ssh_key="x")]), runner)
-        self.assertEqual(summarize(actions), {"superseded": 1, "applied": 1, "rejected": 1})
+        actions = execute_plan(
+            plan_changes([add(), remove(), add(ssh_key="x")]), runner
+        )
+        self.assertEqual(
+            summarize(actions), {"superseded": 1, "applied": 1, "rejected": 1}
+        )
 
 
 class TestAuditAndRoster(unittest.TestCase):
@@ -555,7 +586,9 @@ class TestAuditAndRoster(unittest.TestCase):
     def test_roster_gains_applied_adds(self) -> None:
         runner, _ = fake_runner(0)
         base = {"developers": [{"name": "adi", "code_server_port": 8443}]}
-        actions = execute_plan(plan_changes([add()], existing=base["developers"]), runner, base)
+        actions = execute_plan(
+            plan_changes([add()], existing=base["developers"]), runner, base
+        )
         merged = merge_roster(base, actions)
         self.assertEqual([d["name"] for d in merged["developers"]], ["adi", "carlos"])
         self.assertEqual(merged["developers"][1]["code_server_port"], 8444)
@@ -567,24 +600,32 @@ class TestAuditAndRoster(unittest.TestCase):
         merged = merge_roster(base, actions)
         self.assertNotIn("ssh_key", merged["developers"][0])
         # …but the key IS what gets handed to Ansible for the account itself.
-        self.assertEqual(extra_vars_for(actions[0])["apply_add"][0]["ssh_key"], GOOD_KEY)
+        self.assertEqual(
+            extra_vars_for(actions[0])["apply_add"][0]["ssh_key"], GOOD_KEY
+        )
 
     def test_roster_loses_applied_removals(self) -> None:
         runner, _ = fake_runner(0)
         base = {"developers": [{"name": "adi"}, {"name": "royce"}]}
         actions = execute_plan(plan_changes([remove("royce")]), runner, base)
-        self.assertEqual([d["name"] for d in merge_roster(base, actions)["developers"]], ["adi"])
+        self.assertEqual(
+            [d["name"] for d in merge_roster(base, actions)["developers"]], ["adi"]
+        )
 
     def test_roster_ignores_failed_changes(self) -> None:
         runner, _ = fake_runner(1)
         base = {"developers": [{"name": "adi"}]}
         actions = execute_plan(plan_changes([add()]), runner, base)
-        self.assertEqual([d["name"] for d in merge_roster(base, actions)["developers"]], ["adi"])
+        self.assertEqual(
+            [d["name"] for d in merge_roster(base, actions)["developers"]], ["adi"]
+        )
 
     def test_roster_re_add_does_not_duplicate(self) -> None:
         runner, _ = fake_runner(0)
         base = {"developers": [{"name": "carlos", "code_server_port": 8443}]}
-        actions = execute_plan(plan_changes([add()], existing=base["developers"]), runner, base)
+        actions = execute_plan(
+            plan_changes([add()], existing=base["developers"]), runner, base
+        )
         merged = merge_roster(base, actions)
         self.assertEqual(len(merged["developers"]), 1)
 
@@ -652,7 +693,11 @@ class TestMainWorkflow(unittest.TestCase):
             json.dumps(
                 {
                     "developers": [
-                        {"name": "adi", "code_server_port": 8443, "wg_ip": "10.200.200.2"}
+                        {
+                            "name": "adi",
+                            "code_server_port": 8443,
+                            "wg_ip": "10.200.200.2",
+                        }
                     ]
                 }
             )
