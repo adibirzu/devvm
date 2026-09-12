@@ -20,8 +20,9 @@ You drive it from your Mac with the native **cmux** agent workspace over the VPN
 
 - **👥 Isolated multi-developer sandboxes** — dedicated UNIX accounts (`${ADMIN_USERNAME}`, `${DEV_N_NAME}`, … unlimited) each with their own `code-server`, XFCE/XRDP desktop, shell, OAuth sessions, and API keys. Nothing leaks between users.
 - **🔐 Split-tunnel WireGuard VPN** — every service is reachable **only** over the private `${WG_NETWORK}` tunnel. Defaults are tuned so the VPN never hijacks your Mac's DNS or internet routing.
-- **🤖 Shared MultiLLM gateway** — a system service that proxies Claude / Codex / Gemini / Ollama traffic, tracks token + cost usage per developer, and serves a live dashboard over the VPN.
+- **🤖 Shared MultiLLM gateway** — a system service that proxies Claude / Codex / Gemini / Kimi / Ollama traffic, tracks token + cost usage per developer, and serves a live dashboard over the VPN.
 - **☁️ OCI Administrator skill pack** — [`oci-skills`](https://github.com/adibirzu/oci-skills) is cloned to `/opt/oci-skills` and installed into every developer's enabled Claude Code, Codex, and Gemini CLI harnesses; Antigravity is included only when its opt-in CLI installation succeeds. Gives each agent safe, tenancy-agnostic OCI admin skills (IAM, Security & Compliance, Observability & DB, Networking & Compute) with tenancy preflight, dry-run guards, and secret redaction built in.
+- **🧭 Firstmate + Ori** — [`firstmate`](https://github.com/adibirzu/firstmate) is cloned to `/opt/firstmate` and wired per developer (PATH, axi CLIs, Herdr, Treehouse). Ori, OpenRouter's agent harness (`ori claude`, `ori grok`, …), is installed into each account so those CLIs can run on OpenRouter credentials and models.
 - **🖥️ cmux-driven local workflow** — run the native macOS agent workspace locally and connect its panes to the remote sandbox over WireGuard.
 - **🤝 Live pair programming** — `pair-claude` shares one AI coding session across developers via a group-owned tmux socket.
 - **⚡ Idempotent Ansible** — decoupled from cloud-init (dodging OCI's 32 KB metadata limit); a tiny boot hook brings up networking + WireGuard, then Ansible configures everything else.
@@ -538,7 +539,9 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | WireGuard split-tunnel VPN (no-DNS default) + full-tunnel opt-in | ✅ Implemented |
 | XFCE/XRDP desktops, Polkit fix | ✅ Implemented |
 | `pair-claude` shared sessions, `/opt/shared-dev` | ✅ Implemented |
-| AI CLIs (Claude / Codex / Gemini), Cursor | ✅ Implemented |
+| AI CLIs (Claude / Codex / Gemini / Kimi), Cursor | ✅ Implemented |
+| Ori (OpenRouter harness) + OpenRouter CLI | ✅ Implemented |
+| Firstmate agent distro (symlink, axi CLIs, Herdr, Treehouse) | ✅ Implemented |
 | OCI Administrator skill pack (`oci-skills`) installed into enabled harnesses | ✅ Implemented |
 | Shared MultiLLM gateway service + `/dashboard` over VPN | ✅ Implemented |
 | Per-user MultiLLM hooks, launchers, MCP registration | ✅ Implemented |

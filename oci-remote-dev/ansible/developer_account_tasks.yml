@@ -24,6 +24,7 @@
     src: /opt/shared-dev
     dest: "/home/{{ dev.name }}/shared-workspace"
     state: link
+    follow: false
     owner: "{{ dev.name }}"
     group: "{{ dev.name }}"
 
@@ -47,4 +48,7 @@
     enabled: true
     state: restarted
     daemon_reload: true
-  when: install_code_server | default(true)
+  when:
+    - install_code_server | default(true)
+    - code_server_bin.stat.exists | default(false)
+  ignore_errors: true
