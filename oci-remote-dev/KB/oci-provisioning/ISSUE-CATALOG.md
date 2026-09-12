@@ -146,3 +146,26 @@ This catalog records failures observed while provisioning and validating the VM.
   - Re-run the current playbook; it removes legacy Helm source artifacts before configuring the supported mirror.
 - Lesson:
   - Treat a retired vendor apt mirror as untrusted. The authoritative Helm source and signing-key policy are in [`docs/TOOLCHAIN.md`](../../docs/TOOLCHAIN.md).
+
+## 14) Optional toolchain install aborts the whole playbook
+
+- Symptom:
+  - `install.sh` / the Ansible play stops at the first failed agent CLI, firstmate
+    npm package, or vendor installer (EACCES on a user-global npm, a 404, a
+    missing `kimi` pipx path) and never reaches later developers, Firstmate,
+    firewall, or verification.
+- Root cause:
+  - Optional tooling tasks had no `ignore_errors`, Firstmate per-user npm ran
+    without a writable `NPM_CONFIG_PREFIX`, a Kimi symlink pointed at a
+    pipx path that does not exist (the npm package's bin is `kimi`), and
+    `github.com/adibirzu/multillm` currently 404s so the source clone aborted
+    the play before later CLIs, Firstmate, or Ori ran.
+- Fix:
+  - Optional npm/vendor installs (including Ori, Grok, Cursor agent, code-server,
+    Firstmate axi/herdr/treehouse/no-mistakes) log the failure and continue.
+    Firstmate npm uses `~/.npm-global`. Kimi is linked only when
+    `/usr/local/bin/kimi` (or `/usr/bin/kimi`) actually exists. MultiLLM and
+    oci-skills source clones use a `rescue` that skips that layer.
+  - Re-run the playbook to retry any tool that missed. Set
+    `INSTALL_MULTILLM_GATEWAY=false` (or `MULTILLM_GIT_URL` / `MULTILLM_SOURCE_PATH`)
+    when the MultiLLM repo is unreachable.

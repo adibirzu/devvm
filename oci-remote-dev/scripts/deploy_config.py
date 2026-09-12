@@ -264,11 +264,13 @@ def build_ansible_extra_vars(
         "install_grok": env_bool(env, "INSTALL_GROK", True),
         "install_cline": env_bool(env, "INSTALL_CLINE", True),
         "install_copilot_cli": env_bool(env, "INSTALL_COPILOT_CLI", True),
+        "install_kimi": env_bool(env, "INSTALL_KIMI", True),
         "install_cursor_agent": env_bool(env, "INSTALL_CURSOR_AGENT", True),
         # Cloud-native developer CLIs
         "install_supabase_cli": env_bool(env, "INSTALL_SUPABASE_CLI", True),
         "install_firebase_cli": env_bool(env, "INSTALL_FIREBASE_CLI", True),
         "install_openrouter_cli": env_bool(env, "INSTALL_OPENROUTER_CLI", True),
+        "install_ori": env_bool(env, "INSTALL_ORI", True),
         # Local LLM serving (Ollama) and the coding-client wiring for it.
         "install_ollama": env_bool(env, "INSTALL_OLLAMA", False),
         "ollama_bind_address": env_get(env, "OLLAMA_BIND_ADDRESS", ""),
@@ -309,6 +311,18 @@ def build_ansible_extra_vars(
             env, "OCI_SKILLS_GIT_URL", "https://github.com/adibirzu/oci-skills.git"
         ),
         "oci_skills_git_version": env_get(env, "OCI_SKILLS_GIT_VERSION", "main"),
+        "install_firstmate": env_bool(env, "INSTALL_FIRSTMATE", True),
+        "firstmate_source_path": env_get(env, "FIRSTMATE_SOURCE_PATH", ""),
+        "firstmate_git_url": env_get(
+            env, "FIRSTMATE_GIT_URL", "https://github.com/adibirzu/firstmate.git"
+        ),
+        "firstmate_git_version": env_get(env, "FIRSTMATE_GIT_VERSION", "main"),
+        "install_firstmate_npm": env_bool(env, "INSTALL_FIRSTMATE_NPM", True),
+        "install_firstmate_herdr": env_bool(env, "INSTALL_FIRSTMATE_HERDR", True),
+        "install_firstmate_treehouse": env_bool(
+            env, "INSTALL_FIRSTMATE_TREEHOUSE", True
+        ),
+        "install_firstmate_gh_auth": env_bool(env, "INSTALL_FIRSTMATE_GH_AUTH", True),
         # Host-level concerns a direct install may need to own, which cloud-init
         # already handled on a provisioned VM.
         "configure_firewall": env_bool(env, "CONFIGURE_FIREWALL", True),

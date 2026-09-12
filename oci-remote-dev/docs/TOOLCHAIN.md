@@ -7,10 +7,12 @@ verified. GB10-class hosts (Ubuntu 24.04 aarch64) are a primary target, so
 x86_64-only is skipped with an explicit note instead of failing at provision
 time.
 
-All new toggles default to OFF (`.env.example`, playbook vars,
-`deploy_config.py`, and the SDK deployer): an existing deployment never silently
-grows new global installs on its next run. Opt in per tool with the matching
-`INSTALL_*` flag.
+Agent CLIs default ON for a full agentic workspace (`.env.example`, playbook
+vars, `deploy_config.py`). Host-local extras that are not part of that
+workspace — Ollama and Antigravity — stay opt-in so an existing deployment
+does not grow them on its next run. A failed vendor download or npm install
+is ignored so the rest of the playbook still finishes; re-run to retry the
+ones that missed.
 
 ## Global npm CLIs (`ansible/playbook.yml`)
 
@@ -20,6 +22,8 @@ grows new global installs on its next run. Opt in per tool with the matching
 | Cline | `cline` | yes | yes | Registry metadata shows `@cline/cli-linux-arm64` optional dep (checked 2026-08-24, v3.0.57). |
 | pi coding agent | `@earendil-works/pi-coding-agent` | yes | yes | Pure-JS bundle (single `dist/bundle/cli.js`); declares `engines.node >= 22.19`. Requires Node 22 at **runtime**, so the gate checks the actually-installed Node major rather than the declared `NODE_VERSION` (a re-run does not upgrade an existing Node install) (checked 2026-08-24, v0.84.3). |
 | GitHub Copilot CLI | `@github/copilot` | yes | yes | Registry metadata shows `@github/copilot-linux-arm64` + `linuxmusl-arm64` optional deps; upstream documents Node 22+, gated the same way as pi (checked 2026-08-24, v1.0.80). |
+| Kimi Code | `kimi-code` | yes | yes | Pure-JS npm package; bin name is `kimi`. Requires Node >= 22 at runtime, gated the same way as pi and Copilot CLI (checked 2026-08-26). |
+| OpenRouter CLI | `@openrouter/cli` | yes | yes | Unified LLM API CLI (`openrouter`). Separate from Ori, the OpenRouter agent harness. |
 
 The original trio (`@anthropic-ai/claude-code`, `@openai/codex`,
 `@google/gemini-cli`) ships platform binaries or pure JS with first-class
@@ -36,6 +40,7 @@ fetched and inspected for arch handling on 2026-08-24.
 | Antigravity CLI (`agy`) | `https://antigravity.google/cli/install.sh` | x86_64 branch present | aarch64 branch present | Opt in with `INSTALL_ANTIGRAVITY=true`; it installs the CLI and enables the skills-pack entry. The harness list also gates on the installed binary, so a failed download can never advertise Antigravity. |
 | Cursor agent CLI | `https://cursor.com/install` → `~/.local/bin/cursor-agent` | x86_64 branch present | aarch64 branch present | Terminal agent only. The **Cursor IDE AppImage is x86_64-only upstream** and is skipped on arm64 with a debug note (`install_cursor`). |
 | Grok CLI | `https://x.ai/cli/install.sh` → `~/.grok/bin/grok` | x86_64 branch present | aarch64 branch present | Installs into the user home. |
+| Ori (OpenRouter harness) | `https://openrouter.ai/labs/ori/install.sh` → `~/.local/bin/ori` | `ori-linux-x64` (+musl) | `ori-linux-arm64` (+musl) | Wraps `claude`/`codex`/`grok`/`opencode`/`pi` with OpenRouter credentials and models. Wired into each developer's shell and Firstmate PATH; not a firstmate spawn adapter. |
 
 ## Local LLM serving (`ansible/ollama_tasks.yml`, opt-in `INSTALL_OLLAMA=true`)
 
@@ -58,9 +63,14 @@ fetched and inspected for arch handling on 2026-08-24.
 
 | Tool | Reason |
 | --- | --- |
-| Kimi CLI, Muse | Not part of the reference machine's toolset at the time of writing. |
-| axi/fleet helpers (`gh-axi`, `tasks-axi`, `quota-axi`, `lavish-axi`, `no-mistakes`, `treehouse`, `herdr`, `chrome-devtools-axi`) | Private supervisor tooling of the operator's harness, not distributable from this public repository. |
+| Muse | Vendor installer required; placeholder for future provisioning. |
 | Cursor IDE on arm64 | Upstream publishes no aarch64 AppImage; the task notes it rather than installing a wrong-arch binary. |
+
+Firstmate (`INSTALL_FIRSTMATE=true`) clones the captain's fork to `/opt/firstmate`
+and, per developer, installs the public axi npm CLIs (`tasks-axi`, `gh-axi`,
+`lavish-axi`, `quota-axi`, `chrome-devtools-axi`), Herdr, Treehouse, and
+no-mistakes. Each of those steps is non-fatal: a private-registry 404 or a
+failed binary download is logged and the play continues.
 
 ## Supply-chain notes
 
