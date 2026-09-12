@@ -1,0 +1,75 @@
+---
+# Optional host-level browser verification. Playwright's browser cache is shared
+# read-only from /opt; screenshots and test output remain owned by each developer.
+
+- name: Browser testing | Verify the host has a supported Playwright build
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == 'Ubuntu'
+      - ansible_distribution_major_version in os_browser_testing_packages_by_release
+      - ansible_architecture in ['x86_64', 'aarch64']
+      - (node_major | default(0) | int) >= 22
+    fail_msg: >-
+      INSTALL_BROWSER_TESTING supports Ubuntu 22.04, 24.04, or 26.04 on
+      x86_64/aarch64. This host is {{ ansible_distribution }}
+      {{ ansible_distribution_version }} ({{ ansible_architecture }}); disable
+      the opt-in or use a Playwright-supported Ubuntu image with Node.js 22+.
+
+- name: Browser testing | Install Xvfb and Chromium runtime dependencies
+  ansible.builtin.package:
+    name: "{{ os_browser_testing_packages_by_release[ansible_distribution_major_version] }}"
+    state: present
+
+- name: Browser testing | Install the pinned Playwright CLI
+  community.general.npm:
+    name: playwright
+    version: "{{ playwright_version }}"
+    global: true
+    state: present
+
+- name: Browser testing | Create the shared browser cache
+  ansible.builtin.file:
+    path: /opt/ms-playwright
+    state: directory
+    owner: root
+    group: developers
+    mode: '0755'
+
+- name: Browser testing | Install the matching Chromium build
+  ansible.builtin.command:
+    cmd: playwright install chromium
+  environment:
+    PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright
+  register: playwright_browser_install
+  changed_when: >-
+    'Downloading' in
+    (playwright_browser_install.stdout + playwright_browser_install.stderr)
+
+- name: Browser testing | Make the shared Chromium build readable by developers
+  ansible.builtin.file:
+    path: /opt/ms-playwright
+    owner: root
+    group: developers
+    mode: u=rwX,g=rX,o=rX
+    recurse: true
+
+- name: Browser testing | Install the smoke helper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/playwright-smoke.sh"
+    dest: /usr/local/bin/devvm-playwright-smoke
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Browser testing | Run a headless Chromium screenshot under Xvfb
+  ansible.builtin.command:
+    cmd: /usr/local/bin/devvm-playwright-smoke
+  become_user: "{{ dev.name }}"
+  environment:
+    HOME: "/home/{{ dev.name }}"
+    PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright
+  loop: "{{ developers }}"
+  loop_control:
+    loop_var: dev
+    label: "{{ dev.name }}"
+  changed_when: false

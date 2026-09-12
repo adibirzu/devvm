@@ -153,6 +153,66 @@ Once connected, everything lives behind the tunnel:
 | Developer N Web IDE | `http://${WG_SERVER_IP}:${DEV_N_CODE_SERVER_PORT}` |
 | RDP desktops | `${WG_SERVER_IP}:${RDP_PORT}` |
 
+### Review Firstmate crew work in code-server
+
+code-server is the visual review surface for work that Firstmate dispatches to
+this host; no extra service or public port is needed. Connect WireGuard, then
+open the assigned developer's existing Web IDE with the crew worktree as the
+folder:
+
+```text
+http://${WG_SERVER_IP}:${DEV_N_CODE_SERVER_PORT}/?folder=/absolute/path/to/worktree
+```
+
+Use the exact absolute worktree path from Firstmate's task/PR report (for
+example, a Treehouse path beneath the developer's home). URL-encode spaces if
+the path contains them. If WireGuard is unavailable, `./scripts/connect.sh -u
+<developer> code` opens the same service through a local SSH tunnel; code-server
+must never be exposed directly to the public internet.
+
+Recommended Firstmate PR review loop:
+
+1. Open the reported worktree URL and confirm the status-bar branch matches the
+   PR head.
+2. Fetch the base, then use **Source Control → Graph** / **Git: Compare
+   References** to compare `origin/<default-branch>` with `HEAD`. The integrated
+   terminal command `git diff --stat origin/<default-branch>...HEAD` is a quick
+   scope cross-check.
+3. Read changed files in the editor, run the PR's targeted checks in the
+   integrated terminal, and inspect any screenshots or other artifacts in the
+   worktree.
+4. Submit comments or approval on the full PR URL and return the decision to
+   Firstmate. Firstmate/no-mistakes owns fixes and shipping; reviewers do not
+   merge the PR from code-server.
+
+### Browser verification from an agent worktree
+
+Set `INSTALL_BROWSER_TESTING=true` before provisioning an Ubuntu 22.04, 24.04,
+or 26.04 host. The opt-in installs pinned Playwright Chromium, Xvfb, and the
+Ubuntu runtime libraries on x86-64 or arm64. Headless runs need no `DISPLAY`:
+
+```bash
+cd /path/to/crew-worktree
+export PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+mkdir -p artifacts/playwright
+playwright screenshot https://example.com artifacts/playwright/page.png
+```
+
+For headed tests on a server, let `xvfb-run` allocate and export a display for
+the child process:
+
+```bash
+xvfb-run -a env PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
+  playwright test --headed
+```
+
+If an agent manages a persistent Xvfb instance instead, it must export that
+display (for example `DISPLAY=:99`) before launching the browser. Screenshots
+land wherever the worktree command names; use `artifacts/playwright/` so review
+artifacts remain scoped to that worktree. Provisioning also runs
+`devvm-playwright-smoke` for every developer and writes its proof image to
+`~/.cache/devvm/playwright-smoke.png`.
+
 ---
 
 ## 💻 cmux Native macOS Workspace
@@ -548,6 +608,7 @@ Re-run `./scripts/deploy.sh --profile <OCI_PROFILE> --yes`. The deployer compile
 | AI CLIs (Claude / Codex / Gemini / Kimi), Cursor | ✅ Implemented |
 | Ori (OpenRouter harness) + OpenRouter CLI | ✅ Implemented |
 | Firstmate agent distro (symlink, axi CLIs, Herdr, Treehouse) | ✅ Implemented |
+| Opt-in Playwright Chromium + Xvfb browser verification | ✅ Implemented |
 | OCI Administrator skill pack (`oci-skills`) installed into enabled harnesses | ✅ Implemented |
 | Shared MultiLLM gateway service + `/dashboard` over VPN | ✅ Implemented |
 | Per-user MultiLLM hooks, launchers, MCP registration | ✅ Implemented |

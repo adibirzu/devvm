@@ -9,10 +9,12 @@ time.
 
 Agent CLIs default ON for a full agentic workspace (`.env.example`, playbook
 vars, `deploy_config.py`). Host-local extras that are not part of that
-workspace — Ollama and Antigravity — stay opt-in so an existing deployment
-does not grow them on its next run. A failed vendor download or npm install
-is ignored so the rest of the playbook still finishes; re-run to retry the
-ones that missed.
+workspace — Ollama, Antigravity, and browser testing — stay opt-in so an
+existing deployment does not grow them on its next run. A failed vendor
+download or npm install for an optional agent CLI is ignored so the rest of the
+playbook still finishes; re-run to retry the ones that missed. Browser testing
+is stricter: once explicitly enabled, a missing browser or failed smoke stops
+the run instead of reporting a workspace that cannot perform browser checks.
 
 ## Global npm CLIs (`ansible/playbook.yml`)
 
@@ -58,6 +60,25 @@ fetched and inspected for arch handling on 2026-08-24.
   `claude-local` alias (Ollama serves the Anthropic Messages API natively);
   Codex works via `codex --oss`; Gemini CLI accepts an OpenAI-compatible
   provider at `http://<bind>:<port>/v1`.
+
+## Browser testing
+
+Implemented by `ansible/browser_testing_tasks.yml`; opt in with
+`INSTALL_BROWSER_TESTING=true`.
+
+- **Playwright 1.63.0** is pinned with its matching Chromium download in the
+  shared `/opt/ms-playwright` cache; override the pin with
+  `PLAYWRIGHT_VERSION` when deliberately upgrading both together.
+- Upstream supports Ubuntu 22.04, 24.04, and 26.04 on both x86-64 and arm64.
+  The role installs upstream's release-specific Chromium libraries plus Xvfb
+  and refuses unsupported distributions instead of attempting a wrong binary.
+- `devvm-playwright-smoke` loads an offline HTML page and captures it with
+  Chromium under `xvfb-run`. Provisioning executes it as every developer, so
+  the smoke also verifies shared-browser permissions; proof images land at
+  `~/.cache/devvm/playwright-smoke.png`.
+- In a crew worktree, headless Playwright needs no `DISPLAY`. Use `xvfb-run -a`
+  for headed flows and keep screenshots beneath `artifacts/playwright/`; the
+  full commands and code-server review loop are in the README.
 
 ## Deliberately not provisioned
 
@@ -113,6 +134,7 @@ INSTALL_COPILOT_CLI=true
 INSTALL_CURSOR_AGENT=true
 INSTALL_ANTIGRAVITY=true
 INSTALL_OLLAMA=true
+INSTALL_BROWSER_TESTING=true
 NODE_VERSION=22
 ```
 
