@@ -26,11 +26,13 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # A Linux-safe account name: what useradd will accept on every supported distro.
 USERNAME_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 SSH_KEY_PREFIXES = ("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-")
+DEVPORT_FIRST_PORT = 12000
+DEVPORT_RANGE_SIZE = 100
 
 
 class ConfigError(ValueError):
@@ -225,14 +227,75 @@ def build_developers(
 # --------------------------------------------------------------------------- #
 
 
+def _valid_devport(value: Any) -> bool:
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return False
+    return 1024 <= port <= 65535
+
+
+def assign_devport_range(
+    name: str,
+    existing: Sequence[Dict[str, Any]],
+    range_size: int = DEVPORT_RANGE_SIZE,
+    first_port: int = DEVPORT_FIRST_PORT,
+) -> Tuple[int, int]:
+    """Preserve a developer's already-assigned devport range, looked up by name.
+
+    Shared by every provisioning path (a from-scratch deploy here, a runtime
+    add in `apply_pending.developer_vars`) so a redeploy or a queued apply can
+    never silently reassign a developer's range out from under their already
+    populated `devport` claims state — only a name with no prior allocation in
+    `existing` gets a new one, past every currently configured range end.
+    """
+    existing_position = next(
+        (index for index, dev in enumerate(existing) if dev.get("name") == name),
+        None,
+    )
+    existing_dev = existing[existing_position] if existing_position is not None else {}
+    if _valid_devport(existing_dev.get("devport_range_start")) and _valid_devport(
+        existing_dev.get("devport_range_end")
+    ):
+        return int(existing_dev["devport_range_start"]), int(
+            existing_dev["devport_range_end"]
+        )
+    configured_ends = [
+        int(dev["devport_range_end"])
+        for dev in existing
+        if _valid_devport(dev.get("devport_range_end"))
+    ]
+    position = existing_position if existing_position is not None else len(existing)
+    start = (
+        max(configured_ends) + 1
+        if configured_ends
+        else first_port + position * range_size
+    )
+    end = start + range_size - 1
+    if end > 65535:
+        raise ConfigError(
+            f"no per-developer devport range remains below 65535 for {name!r}"
+        )
+    return start, end
+
+
 def build_ansible_extra_vars(
     env: Dict[str, str],
     developers: List[Dict[str, Any]],
     overrides: Optional[Dict[str, Any]] = None,
+    existing_developers: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Compile the extra-vars the playbook expects, identically for every path."""
-    dev_vars = [
-        {
+    """Compile the extra-vars the playbook expects, identically for every path.
+
+    `existing_developers` is the roster from a previously emitted extra-vars
+    file (if any) — passing it in lets a redeploy preserve every developer's
+    devport range instead of recomputing it from their position in `.env`.
+    """
+    roster = [dict(d) for d in (existing_developers or [])]
+    dev_vars = []
+    for dev in developers:
+        devport_start, devport_end = assign_devport_range(dev["name"], roster)
+        compiled = {
             "name": dev["name"],
             "code_server_port": dev["code_server_port"],
             "wg_ip": dev["wg_ip"],
@@ -242,9 +305,11 @@ def build_ansible_extra_vars(
                 "git_email", f"{dev['name']}@users.noreply.github.com"
             ),
             "github_user": dev.get("github_user", dev["name"]),
+            "devport_range_start": devport_start,
+            "devport_range_end": devport_end,
         }
-        for dev in developers
-    ]
+        dev_vars.append(compiled)
+        roster = [d for d in roster if d.get("name") != dev["name"]] + [compiled]
 
     extra_vars: Dict[str, Any] = {
         "developers": dev_vars,
@@ -325,6 +390,7 @@ def build_ansible_extra_vars(
             env, "INSTALL_FIRSTMATE_TREEHOUSE", True
         ),
         "install_firstmate_gh_auth": env_bool(env, "INSTALL_FIRSTMATE_GH_AUTH", True),
+        "install_devport": env_bool(env, "INSTALL_DEVPORT", False),
         # Host-level concerns a direct install may need to own, which cloud-init
         # already handled on a provisioned VM.
         "configure_firewall": env_bool(env, "CONFIGURE_FIREWALL", True),
@@ -426,8 +492,26 @@ def main(argv: Optional[List[str]] = None) -> int:
             admin_override=args.admin_user,
             admin_ssh_key_override=args.admin_ssh_key,
         )
+        # A redeploy overwrites --emit-vars, so read its prior developers roster
+        # first: it is the only record of each developer's already-assigned
+        # devport range, and apply_pending.py may have advanced it since the
+        # last deploy.
+        existing_developers: List[Dict[str, Any]] = []
+        if args.emit_vars:
+            try:
+                prior = json.loads(Path(args.emit_vars).read_text(encoding="utf-8"))
+                prior_developers = (
+                    prior.get("developers") if isinstance(prior, dict) else None
+                )
+                if isinstance(prior_developers, list):
+                    existing_developers = prior_developers
+            except (OSError, json.JSONDecodeError):
+                pass
         extra_vars = build_ansible_extra_vars(
-            env, developers, _parse_overrides(args.set)
+            env,
+            developers,
+            _parse_overrides(args.set),
+            existing_developers=existing_developers,
         )
 
         if args.emit_vars:
