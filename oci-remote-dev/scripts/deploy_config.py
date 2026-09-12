@@ -280,6 +280,8 @@ def build_ansible_extra_vars(
         "install_code_server": env_bool(env, "INSTALL_CODE_SERVER", True),
         "install_podman": env_bool(env, "INSTALL_PODMAN", True),
         "install_qemu": env_bool(env, "INSTALL_QEMU", False),
+        "install_browser_testing": env_bool(env, "INSTALL_BROWSER_TESTING", False),
+        "playwright_version": env_get(env, "PLAYWRIGHT_VERSION", "1.63.0"),
         "install_dev_tools": env_bool(env, "INSTALL_DEV_TOOLS", True),
         "install_github_cli": env_bool(env, "INSTALL_GITHUB_CLI", True),
         "install_csp_clis": env_bool(env, "INSTALL_CSP_CLIS", True),

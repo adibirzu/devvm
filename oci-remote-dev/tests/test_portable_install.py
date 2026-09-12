@@ -5,9 +5,11 @@ network, no package manager, no Ansible run, so this is safe anywhere.
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -36,7 +38,11 @@ class TestInstallScript(unittest.TestCase):
         self.assertTrue(INSTALL.stat().st_mode & 0o111, "install.sh is not executable")
 
     def test_shell_syntax(self) -> None:
-        for script in (INSTALL, SCRIPTS / "lib" / "distro.sh"):
+        for script in (
+            INSTALL,
+            SCRIPTS / "lib" / "distro.sh",
+            SCRIPTS / "playwright-smoke.sh",
+        ):
             result = subprocess.run(
                 ["bash", "-n", str(script)], capture_output=True, text=True
             )
@@ -57,6 +63,45 @@ class TestInstallScript(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Unknown option", result.stderr)
+
+    def test_browser_smoke_writes_the_requested_screenshot(self) -> None:
+        smoke = SCRIPTS / "playwright-smoke.sh"
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = Path(raw_tmp)
+            fake_xvfb = tmp / "xvfb-run"
+            fake_playwright = tmp / "playwright"
+            output = tmp / "artifacts" / "smoke.png"
+            fake_xvfb.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "while [[ ${1:-} == -* ]]; do shift; done\n"
+                'exec "$@"\n',
+                encoding="utf-8",
+            )
+            fake_playwright.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "output=${!#}\n"
+                "printf 'fake-png' > \"$output\"\n",
+                encoding="utf-8",
+            )
+            fake_xvfb.chmod(0o755)
+            fake_playwright.chmod(0o755)
+            env = {
+                **os.environ,
+                "XVFB_RUN_BIN": str(fake_xvfb),
+                "PLAYWRIGHT_BIN": str(fake_playwright),
+            }
+            result = subprocess.run(
+                ["bash", str(smoke), str(output)],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output.read_bytes(), b"fake-png")
+            self.assertIn(str(output), result.stdout)
 
 
 class TestDistroDetection(unittest.TestCase):
@@ -199,18 +244,45 @@ class TestAnsibleAssets(unittest.TestCase):
 
     def test_agent_tooling_additions_default_off(self) -> None:
         """Host-local extras that are not part of the default agentic workspace
-        stay opt-in: an existing deployment must not grow Ollama or Antigravity
-        on its next run. Agent CLIs themselves default ON (see 59be4b9)."""
+        stay opt-in: an existing deployment must not grow Ollama, Antigravity,
+        or browser testing on its next run. Agent CLIs themselves default ON."""
         devs = build_developers({"ADMIN_USERNAME": "maria"}, require_ssh_key=False)
         extra = build_ansible_extra_vars({}, devs)
         for flag in (
             "install_ollama",
             "install_antigravity",
+            "install_browser_testing",
         ):
             self.assertFalse(
                 extra[flag],
                 f"{flag} defaults to True — new host-local extras must be opt-in",
             )
+
+    def test_browser_testing_opt_in_and_version_are_compiled(self) -> None:
+        devs = build_developers({"ADMIN_USERNAME": "maria"}, require_ssh_key=False)
+        defaults = build_ansible_extra_vars({}, devs)
+        enabled = build_ansible_extra_vars(
+            {
+                "INSTALL_BROWSER_TESTING": "true",
+                "PLAYWRIGHT_VERSION": "1.63.0",
+            },
+            devs,
+        )
+        self.assertFalse(defaults["install_browser_testing"])
+        self.assertEqual(defaults["playwright_version"], "1.63.0")
+        self.assertTrue(enabled["install_browser_testing"])
+        self.assertEqual(enabled["playwright_version"], "1.63.0")
+
+    def test_browser_testing_packages_cover_supported_ubuntu_releases(self) -> None:
+        distro_vars = yaml.safe_load(
+            (ANSIBLE / "vars" / "Debian.yml").read_text(encoding="utf-8")
+        )
+        packages = distro_vars["os_browser_testing_packages_by_release"]
+        self.assertEqual(set(packages), {"22", "24", "26"})
+        self.assertIn("xvfb", packages["22"])
+        self.assertIn("libasound2", packages["22"])
+        self.assertIn("libasound2t64", packages["24"])
+        self.assertIn("libnss3", packages["26"])
 
     def test_optional_agent_cli_installs_do_not_abort_the_play(self) -> None:
         """A failed vendor download or npm 404 must not stop the rest of the
