@@ -33,6 +33,7 @@
     install_kimi: true
     install_ori: true
     install_firstmate: true
+    install_devport: false
     install_ollama: false
     ollama_bind_address: ""
     ollama_effective_bind: "{{ ollama_bind_address if (ollama_bind_address | default('')) | length > 0 else (wg_server_ip | default('127.0.0.1', true)) }}"
