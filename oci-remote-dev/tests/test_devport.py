@@ -72,6 +72,17 @@ class TestDevportCLI(unittest.TestCase):
         self.assertEqual(claim.returncode, 0, claim.stderr)
         self.assertEqual(claim.stdout, "http://10.0.0.1:23001\n")
 
+    def test_a_claim_outside_a_reconfigured_range_is_reallocated(self) -> None:
+        first = self.run_cli("claim", "tree-a")
+        self.assertEqual(first.stdout, "http://10.0.0.1:23000\n")
+
+        self.write_config(24000, 24002)
+        second = self.run_cli("claim", "tree-a")
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(second.stdout, "http://10.0.0.1:24000\n")
+        self.assertIn("re-allocating", second.stderr)
+
     def test_env_exports_common_server_variables(self) -> None:
         result = self.run_cli("env", "tree-a")
 

@@ -55,11 +55,13 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 try:  # run as a script: scripts/ is on sys.path
     from control_plane import validate_developer_name, validate_developer_request
+    from deploy_config import assign_devport_range
 except ImportError:  # imported as scripts.apply_pending (tests, tooling)
     from scripts.control_plane import (  # type: ignore[no-redef]
         validate_developer_name,
         validate_developer_request,
     )
+    from scripts.deploy_config import assign_devport_range  # type: ignore[no-redef]
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 QUEUE_FILE = Path("/etc/agent-os/pending-changes.jsonl")
@@ -194,36 +196,9 @@ def developer_vars(
     gh_user = str(change.get("github_user") or name)
     port = change.get("code_server_port")
     wg_ip = change.get("wg_ip")
-    existing_position = next(
-        (index for index, dev in enumerate(existing) if dev.get("name") == name),
-        None,
+    devport_start, devport_end = assign_devport_range(
+        name, existing, DEFAULT_DEVPORT_RANGE_SIZE, DEFAULT_DEVPORT_START
     )
-    existing_dev = existing[existing_position] if existing_position is not None else {}
-    configured_ends = [
-        int(dev["devport_range_end"])
-        for dev in existing
-        if _valid_port(dev.get("devport_range_end"))
-    ]
-    if _valid_port(existing_dev.get("devport_range_start")) and _valid_port(
-        existing_dev.get("devport_range_end")
-    ):
-        devport_start = int(existing_dev["devport_range_start"])
-        devport_end = int(existing_dev["devport_range_end"])
-    else:
-        devport_start = (
-            DEFAULT_DEVPORT_START + existing_position * DEFAULT_DEVPORT_RANGE_SIZE
-            if existing_position is not None
-            else (
-                max(configured_ends) + 1
-                if configured_ends
-                else DEFAULT_DEVPORT_START + len(existing) * DEFAULT_DEVPORT_RANGE_SIZE
-            )
-        )
-        devport_end = devport_start + DEFAULT_DEVPORT_RANGE_SIZE - 1
-    if devport_end > 65535:
-        raise ValueError(
-            f"no per-developer devport range remains below 65535 for {name!r}"
-        )
     return {
         "name": name,
         "ssh_key": str(change.get("ssh_key") or ""),
