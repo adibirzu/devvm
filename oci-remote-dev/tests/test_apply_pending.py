@@ -17,6 +17,7 @@ from unittest import mock
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
+from scripts.deploy_config import build_ansible_extra_vars, build_developers
 from scripts.apply_pending import (
     ansible_command,
     applied_ids,
@@ -317,6 +318,45 @@ class TestPlanning(unittest.TestCase):
         self.assertEqual(actions[1]["status"], "rejected")
         self.assertIn("devport", actions[1]["reason"])
         self.assertNotIn("dev", actions[1])
+
+    def test_a_runtime_add_then_a_full_redeploy_agree_on_the_devport_range(self) -> None:
+        # apply_pending (runtime add) and deploy_config (full redeploy) must
+        # never disagree on a developer's devport range for the same roster —
+        # they share one range-assignment helper precisely to guarantee this.
+        existing = [
+            {
+                "name": "maria",
+                "code_server_port": 8443,
+                "wg_ip": "10.200.200.2",
+                "devport_range_start": 12000,
+                "devport_range_end": 12099,
+            }
+        ]
+        (action,) = plan_changes([add("alice")], existing=existing)
+        self.assertEqual(action["status"], "ready")
+        applied_roster = existing + [
+            {k: v for k, v in action["dev"].items() if k != "ssh_key"}
+        ]
+
+        devs = build_developers(
+            {
+                "ADMIN_USERNAME": "maria",
+                "MULTI_DEV_ENABLED": "true",
+                "DEV_2_NAME": "alice",
+            },
+            require_ssh_key=False,
+        )
+        compiled = build_ansible_extra_vars(
+            {}, devs, existing_developers=applied_roster
+        )["developers"]
+
+        self.assertEqual(
+            (compiled[1]["devport_range_start"], compiled[1]["devport_range_end"]),
+            (
+                action["dev"]["devport_range_start"],
+                action["dev"]["devport_range_end"],
+            ),
+        )
 
 
 class TestAnsibleBoundary(unittest.TestCase):
