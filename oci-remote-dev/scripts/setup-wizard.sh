@@ -327,6 +327,7 @@ main() {
 
     prompt_yn INSTALL_CURSOR "Install Cursor IDE?" "y"
     prompt_yn INSTALL_PODMAN "Install Podman local container tooling?" "y"
+    prompt_yn INSTALL_BROWSER_TESTING "Install Playwright Chromium + Xvfb (Ubuntu only)?" "n"
     prompt_yn INSTALL_GITHUB_CLI "Install GitHub CLI (gh)?" "y"
     prompt_yn INSTALL_CSP_CLIS "Install all CSP CLIs on the VM?" "y"
     if [[ "$INSTALL_CSP_CLIS" == "true" ]]; then
@@ -343,7 +344,11 @@ main() {
 
     prompt MULTILLM_SOURCE_PATH "Local MultiLLM source path (empty = clone the public repo)" ""
 
-    prompt NODE_VERSION "Node.js version" "20"
+    NODE_VERSION_DEFAULT="20"
+    if [[ "$INSTALL_BROWSER_TESTING" == "true" ]]; then
+        NODE_VERSION_DEFAULT="22"
+    fi
+    prompt NODE_VERSION "Node.js version" "$NODE_VERSION_DEFAULT"
     prompt PYTHON_VERSION "Python version" "3.12"
 
     # ========== Security Configuration ==========
@@ -480,6 +485,8 @@ INSTALL_CODE_SERVER=$INSTALL_CODE_SERVER
 CODE_SERVER_PORT=$CODE_SERVER_PORT
 INSTALL_CURSOR=$INSTALL_CURSOR
 INSTALL_PODMAN=$INSTALL_PODMAN
+INSTALL_BROWSER_TESTING=${INSTALL_BROWSER_TESTING:-false}
+PLAYWRIGHT_VERSION="1.63.0"
 INSTALL_GITHUB_CLI=$INSTALL_GITHUB_CLI
 INSTALL_CSP_CLIS=$INSTALL_CSP_CLIS
 INSTALL_OCI_CLI=$INSTALL_OCI_CLI
