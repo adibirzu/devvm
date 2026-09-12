@@ -221,7 +221,9 @@ def developer_vars(
         )
         devport_end = devport_start + DEFAULT_DEVPORT_RANGE_SIZE - 1
     if devport_end > 65535:
-        raise ValueError(f"no per-developer devport range remains below 65535 for {name!r}")
+        raise ValueError(
+            f"no per-developer devport range remains below 65535 for {name!r}"
+        )
     return {
         "name": name,
         "ssh_key": str(change.get("ssh_key") or ""),
