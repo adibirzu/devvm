@@ -40,7 +40,12 @@ except ImportError:
     sys.exit(0)
 
 
-def _summary(tool: str, tool_input: dict) -> str:
+def _summary(tool: str, tool_input: dict, rule_id: str = "") -> str:
+    if rule_id.startswith("secret-write-detected"):
+        # rule_id: "secret-write-detected:<pattern_class>:<target_path>"
+        parts = rule_id.split(":", 2)
+        p = parts[2] if len(parts) == 3 and parts[2] else "(unresolved path)"
+        return f"{tool} write to {p} — content redacted (secret-shaped)"[:160]
     if tool == "Bash":
         return ("$ " + str(tool_input.get("command", "")))[:160]
     p = tool_input.get("file_path") or tool_input.get("path") or ""
@@ -80,7 +85,7 @@ def main() -> int:
             "action": action,
             "rule": rule_id,
             "reason": reason,
-            "summary": _summary(tool, tool_input),
+            "summary": _summary(tool, tool_input, rule_id),
             "session": os.environ.get("AGENTCTL_SESSION", ""),
         }
     )
