@@ -82,6 +82,8 @@
     </header>
     <div class="totals" id="totals"></div>
     <div class="notifs" id="notifs"></div>
+    <h2 style="margin:0 0 1rem;">🧰 By harness</h2>
+    <div id="harness"><p class="empty">Loading…</p></div>
     <div id="board"><p class="empty">Loading…</p></div>
     <h2 style="margin:2.5rem 0 1rem;">📁 Projects</h2>
     <div id="projects"><p class="empty">Loading…</p></div>
@@ -113,6 +115,7 @@
       gw.textContent = (up ? "● gateway up" : "● gateway down");
       renderNotifs(data);
       renderGuardrail(data);
+      renderHarness(data);
       const board = document.getElementById("board");
       const devs = data.developers || [];
       if (!devs.length) { board.innerHTML = `<p class="empty">No developers found.</p>`; return; }
@@ -153,6 +156,25 @@
         }
       }
       if (seenNotifs.size > 500) seenNotifs.clear();  // bound memory
+    }
+    // Per-harness engagement (live sessions by tool) plus cost when the
+    // gateway serves it — the MultiLLM equivalent of LiteLLM's per-User-Agent
+    // metrics. Renders nothing when agents.json predates harness tracking.
+    function renderHarness(data) {
+      const box = document.getElementById("harness");
+      const byH = (data && data.by_harness) || {};
+      const costs = (data && data.harness_costs) || {};
+      const names = Object.keys(byH).sort();
+      if (!names.length) { box.innerHTML = `<p class="empty">No harness data yet.</p>`; return; }
+      const rows = names.map(h => {
+        const b = byH[h] || {};
+        const cost = (h in costs) ? `<td data-label="Cost">${fmtCost(costs[h])}</td>` : `<td data-label="Cost">—</td>`;
+        return `<tr><td data-label="Harness">${h}</td><td data-label="Sessions">${b.sessions || 0}</td>`
+          + `<td data-label="Active">${b.running || 0}</td>${cost}</tr>`;
+      }).join("");
+      box.innerHTML = `<div class="dev"><table class="sessions">
+        <thead><tr><th>Harness</th><th>Sessions</th><th>Active</th><th>Cost · 24h</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
     }
     function gitBadge(g) {
       if (!g) return `<span class="pill dead">no git</span>`;
