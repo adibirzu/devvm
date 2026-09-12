@@ -294,6 +294,30 @@ class TestPlanning(unittest.TestCase):
         self.assertEqual(actions[1]["dev"]["code_server_port"], 8443)
         self.assertEqual(actions[1]["dev"]["wg_ip"], "10.200.200.2")
 
+    def test_devport_range_exhaustion_is_rejected_without_crashing_the_batch(self) -> None:
+        # "zeno" already holds the last possible /100 range below 65535; a
+        # re-add of "zeno" reuses that range fine, but a new developer with no
+        # existing allocation has nowhere left to go and must be rejected —
+        # not raise out of plan_changes and take the whole batch down with it.
+        existing = [
+            {
+                "name": "zeno",
+                "code_server_port": 8443,
+                "wg_ip": "10.200.200.2",
+                "devport_range_start": 65436,
+                "devport_range_end": 65535,
+            }
+        ]
+        actions = plan_changes([add("zeno"), add("carlos")], existing=existing)
+        self.assertEqual(actions[0]["status"], "ready")
+        self.assertEqual(
+            (actions[0]["dev"]["devport_range_start"], actions[0]["dev"]["devport_range_end"]),
+            (65436, 65535),
+        )
+        self.assertEqual(actions[1]["status"], "rejected")
+        self.assertIn("devport", actions[1]["reason"])
+        self.assertNotIn("dev", actions[1])
+
 
 class TestAnsibleBoundary(unittest.TestCase):
     def test_extra_vars_for_an_add(self) -> None:
