@@ -31,6 +31,8 @@ from typing import Any, Dict, List, Optional
 # A Linux-safe account name: what useradd will accept on every supported distro.
 USERNAME_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 SSH_KEY_PREFIXES = ("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-")
+DEVPORT_FIRST_PORT = 12000
+DEVPORT_RANGE_SIZE = 100
 
 
 class ConfigError(ValueError):
@@ -231,20 +233,37 @@ def build_ansible_extra_vars(
     overrides: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Compile the extra-vars the playbook expects, identically for every path."""
-    dev_vars = [
-        {
-            "name": dev["name"],
-            "code_server_port": dev["code_server_port"],
-            "wg_ip": dev["wg_ip"],
-            "ssh_key": dev.get("ssh_key", ""),
-            "git_name": dev.get("git_name", dev["name"]),
-            "git_email": dev.get(
-                "git_email", f"{dev['name']}@users.noreply.github.com"
-            ),
-            "github_user": dev.get("github_user", dev["name"]),
-        }
-        for dev in developers
-    ]
+    dev_vars = []
+    for index, dev in enumerate(developers):
+        devport_start = int(
+            dev.get(
+                "devport_range_start",
+                DEVPORT_FIRST_PORT + index * DEVPORT_RANGE_SIZE,
+            )
+        )
+        devport_end = int(
+            dev.get("devport_range_end", devport_start + DEVPORT_RANGE_SIZE - 1)
+        )
+        if not (1024 <= devport_start <= devport_end <= 65535):
+            raise ConfigError(
+                f"Developer '{dev['name']}' has invalid devport range "
+                f"{devport_start}-{devport_end}"
+            )
+        dev_vars.append(
+            {
+                "name": dev["name"],
+                "code_server_port": dev["code_server_port"],
+                "wg_ip": dev["wg_ip"],
+                "ssh_key": dev.get("ssh_key", ""),
+                "git_name": dev.get("git_name", dev["name"]),
+                "git_email": dev.get(
+                    "git_email", f"{dev['name']}@users.noreply.github.com"
+                ),
+                "github_user": dev.get("github_user", dev["name"]),
+                "devport_range_start": devport_start,
+                "devport_range_end": devport_end,
+            }
+        )
 
     extra_vars: Dict[str, Any] = {
         "developers": dev_vars,
@@ -325,6 +344,7 @@ def build_ansible_extra_vars(
             env, "INSTALL_FIRSTMATE_TREEHOUSE", True
         ),
         "install_firstmate_gh_auth": env_bool(env, "INSTALL_FIRSTMATE_GH_AUTH", True),
+        "install_devport": env_bool(env, "INSTALL_DEVPORT", False),
         # Host-level concerns a direct install may need to own, which cloud-init
         # already handled on a provisioned VM.
         "configure_firewall": env_bool(env, "CONFIGURE_FIREWALL", True),

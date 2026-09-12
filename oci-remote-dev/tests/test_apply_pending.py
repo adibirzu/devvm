@@ -187,6 +187,8 @@ class TestDeveloperVars(unittest.TestCase):
                 "git_name": "carlos",
                 "git_email": "carlos@users.noreply.github.com",
                 "github_user": "carlos",
+                "devport_range_start": 12000,
+                "devport_range_end": 12099,
             },
         )
 
@@ -241,6 +243,39 @@ class TestPlanning(unittest.TestCase):
         (action,) = plan_changes([add()], existing=existing)
         self.assertEqual(action["dev"]["code_server_port"], 8444)
         self.assertEqual(action["dev"]["wg_ip"], "10.200.200.3")
+        self.assertEqual(action["dev"]["devport_range_start"], 12100)
+
+    def test_devport_allocation_continues_past_configured_ranges(self) -> None:
+        existing = [
+            {
+                "name": "adi",
+                "code_server_port": 8443,
+                "wg_ip": "10.200.200.2",
+                "devport_range_start": 14000,
+                "devport_range_end": 14099,
+            }
+        ]
+        (action,) = plan_changes([add()], existing=existing)
+        self.assertEqual(
+            (action["dev"]["devport_range_start"], action["dev"]["devport_range_end"]),
+            (14100, 14199),
+        )
+
+    def test_readding_a_developer_preserves_their_devport_range(self) -> None:
+        existing = [
+            {
+                "name": "carlos",
+                "code_server_port": 8443,
+                "wg_ip": "10.200.200.2",
+                "devport_range_start": 14000,
+                "devport_range_end": 14099,
+            }
+        ]
+        (action,) = plan_changes([add()], existing=existing)
+        self.assertEqual(
+            (action["dev"]["devport_range_start"], action["dev"]["devport_range_end"]),
+            (14000, 14099),
+        )
 
     def test_a_removal_frees_the_slot_for_a_later_add(self) -> None:
         existing = [{"name": "adi", "code_server_port": 8443, "wg_ip": "10.200.200.2"}]

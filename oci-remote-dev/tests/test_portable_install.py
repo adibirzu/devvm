@@ -252,6 +252,7 @@ class TestAnsibleAssets(unittest.TestCase):
             "install_ollama",
             "install_antigravity",
             "install_browser_testing",
+            "install_devport",
         ):
             self.assertFalse(
                 extra[flag],
@@ -405,6 +406,24 @@ class TestConfigCompiler(unittest.TestCase):
         )
         extra = build_ansible_extra_vars({}, devs)
         self.assertEqual(extra["developers"][0]["ssh_key"], "ssh-rsa AAAA maria@x")
+
+    def test_developers_receive_non_overlapping_devport_ranges(self) -> None:
+        devs = build_developers(
+            {
+                "ADMIN_USERNAME": "maria",
+                "MULTI_DEV_ENABLED": "true",
+                "DEV_2_NAME": "alice",
+            },
+            require_ssh_key=False,
+        )
+        compiled = build_ansible_extra_vars({}, devs)["developers"]
+        self.assertEqual(
+            [
+                (dev["devport_range_start"], dev["devport_range_end"])
+                for dev in compiled
+            ],
+            [(12000, 12099), (12100, 12199)],
+        )
 
     def test_local_inventory_uses_a_local_connection(self) -> None:
         self.assertIn("ansible_connection=local", build_inventory("local"))
