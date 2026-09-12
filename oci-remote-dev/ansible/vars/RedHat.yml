@@ -52,6 +52,10 @@ os_qemu_packages:
   - qemu-img
   - edk2-aarch64
 
+# The pinned Playwright build supports Debian/Ubuntu Linux, not the RedHat
+# family. The opt-in task fails with an actionable message before installing.
+os_browser_testing_packages_by_release: {}
+
 # RHEL has no `xfce4` meta-package: install the session pieces explicitly.
 os_desktop_packages:
   - xrdp
