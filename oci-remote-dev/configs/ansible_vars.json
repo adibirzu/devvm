@@ -5,9 +5,9 @@
       "code_server_port": 8443,
       "wg_ip": "10.200.200.2",
       "ssh_key": "",
-      "git_name": "adi",
-      "git_email": "adi@users.noreply.github.com",
-      "github_user": "adi"
+      "git_name": "Adrian Birzu",
+      "git_email": "60743810+adibirzu@users.noreply.github.com",
+      "github_user": "adibirzu"
     }
   ],
   "wg_server_ip": "127.0.0.1",
